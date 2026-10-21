@@ -50,12 +50,17 @@ export function loadConfig(env = process.env) {
   const baseUrl = readString(env, 'VYCE_BASE_URL', 'https://vyce.cloud').replace(/\/+$/, '');
   const statePath = path.resolve(readString(env, 'VYCE_STATE_PATH', '.auth/state.json'));
 
+  const notifyRaw = readString(env, 'TELEGRAM_NOTIFY', 'true').toLowerCase();
+  const telegramNotifyAlways = notifyRaw === 'always';
+  const telegramNotify = telegramNotifyAlways ? true : readBoolean(env, 'TELEGRAM_NOTIFY', true);
+
   return {
     baseUrl,
     cookie: readString(env, 'VYCE_COOKIE'),
     statePath,
     serverSelectors: readList(env, 'VYCE_SERVERS'),
     thresholdHours: readNumber(env, 'VYCE_THRESHOLD_HOURS', 24, { min: 0, max: 24 }),
+    cooldownGraceMinutes: readNumber(env, 'VYCE_COOLDOWN_GRACE_MINUTES', 5, { min: 0, max: 8 }),
     intervalHours: readNumber(env, 'VYCE_INTERVAL_HOURS', 24, { min: 0.1, max: 24 * 30 }),
     dryRun: readBoolean(env, 'VYCE_DRY_RUN', false),
     headless: readBoolean(env, 'VYCE_HEADLESS', true),
@@ -64,6 +69,7 @@ export function loadConfig(env = process.env) {
     telegramBotToken: readString(env, 'TELEGRAM_BOT_TOKEN'),
     telegramChatId: readString(env, 'TELEGRAM_CHAT_ID'),
     telegramApiBase: readString(env, 'TELEGRAM_API_BASE', 'https://api.telegram.org').replace(/\/+$/, ''),
-    telegramNotify: readBoolean(env, 'TELEGRAM_NOTIFY', true),
+    telegramNotify,
+    telegramNotifyAlways,
   };
 }

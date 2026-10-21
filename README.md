@@ -149,6 +149,7 @@ npm run renew:ui -- --headed   # 显示浏览器窗口（默认无头）
 | `VYCE_BASE_URL` | `https://vyce.cloud` | 站点地址 |
 | `VYCE_SERVERS` | 空（全部） | 只处理指定服务器，填 ID 或名称，逗号分隔 |
 | `VYCE_THRESHOLD_HOURS` | `24` | 剩余时间 ≤ 该值才续期；站点冷却为 24 小时，不建议调大 |
+| `VYCE_COOLDOWN_GRACE_MINUTES` | `5` | 距续期窗口只差几分钟时等待后重试，避免固定时间运行差几秒而跳过 |
 | `VYCE_INTERVAL_HOURS` | `24` | daemon 检查间隔（小时） |
 | `VYCE_DRY_RUN` | `false` | 试运行，只打印计划 |
 | `VYCE_HEADLESS` | `true` | 浏览器模式是否无头；首次 `login` 始终需要可见窗口 |
@@ -156,7 +157,7 @@ npm run renew:ui -- --headed   # 显示浏览器窗口（默认无头）
 | `VYCE_TIMEOUT_MS` | `20000` | 单个 HTTP 请求超时 |
 | `TELEGRAM_BOT_TOKEN` | 空 | Telegram 机器人 Token（未填写则不通知） |
 | `TELEGRAM_CHAT_ID` | 空 | 接收通知的 chat_id |
-| `TELEGRAM_NOTIFY` | `true` | 是否启用 Telegram 通知 |
+| `TELEGRAM_NOTIFY` | `true` | 是否启用通知；设为 `always` 则每天发送状态（即使无需续期） |
 | `TELEGRAM_API_BASE` | `https://api.telegram.org` | Telegram API 地址（一般不用改） |
 
 > 在 GitHub Actions 中请使用 `VYCE_COOKIE` Secret，因为浏览器登录需要人工操作。
@@ -199,8 +200,9 @@ npm run notify-test
 - `VYCE_COOKIE`（必填）
 - `TELEGRAM_BOT_TOKEN`
 - `TELEGRAM_CHAT_ID`
+- `TELEGRAM_NOTIFY`（可选：`true` 默认、`false` 关闭、`always` 每天发状态）
 
-工作流模板已经把这些 Secret 注入到 `npm run renew` 的环境变量中。也支持在 Secret 中设置 `TELEGRAM_NOTIFY=false` 临时关闭通知。
+工作流模板已经把这些 Secret 注入到 `npm run renew` 的环境变量中。
 
 ### 4. 什么时候会收到通知
 
@@ -208,8 +210,11 @@ npm run notify-test
 - ⚠️ 有服务器续期失败（部分失败也会发）；
 - ❌ 登录失效、网络错误等整体失败；
 - 🧪 手动 `--dry-run` 时有计划续期；
-- 全部处于冷却期时不发送，避免每天刷屏；
+- 全部处于冷却期时默认不发送，避免每天刷屏；
+- 把 `TELEGRAM_NOTIFY` 设为 `always`，则每天都会收到一条状态消息（即使无需续期）；
 - 通知发送失败只记录警告，不会影响续期本身。
+
+> 如果运行成功但没收到消息，先看日志里的“本次结果”：如果显示 `续期 0 台，跳过 1 台`，说明服务器还在冷却期，默认不发通知，这是正常的。想每天都收到一条确认，把 `TELEGRAM_NOTIFY` 设为 `always`。
 
 ## 浏览器点击模式
 

@@ -222,6 +222,22 @@ test('notifyFailure 在登录失效时发送失败通知', async () => {
   }
 });
 
+test('TELEGRAM_NOTIFY=always 时即使全部冷却也发送每日状态', async () => {
+  const mock = await startTelegramMock();
+  try {
+    const result = await notifyApiResult({
+      config: { ...makeConfig(mock.apiBase), telegramNotifyAlways: true },
+      logger: silentLogger,
+      summary: { ...sampleSummary, renewed: [], failed: [], planned: [] },
+    });
+    assert.equal(result.sent, true);
+    assert.equal(mock.requests.length, 1);
+    assert.match(mock.requests[0].body.text, /无需续期/);
+  } finally {
+    await mock.close();
+  }
+});
+
 test('notifyTest 未配置时抛出明确错误', async () => {
   await assert.rejects(
     () =>

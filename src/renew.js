@@ -6,6 +6,10 @@ import {
 } from './decisions.js';
 import { VyceAuthError } from './vyce-client.js';
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function serverLabel(server) {
   const name = server?.name || '(未命名)';
   return server?.id ? `${name} [${server.id}]` : name;
@@ -37,6 +41,7 @@ export async function runRenewal({
   logger,
   serverSelectors = [],
   thresholdHours = 24,
+  cooldownGraceMinutes = 5,
   dryRun = false,
 }) {
   const user = await client.getMe();
@@ -62,8 +67,25 @@ export async function runRenewal({
   };
 
   for (const server of servers) {
-    const decision = computeRenewalDecision(server, Date.now(), { thresholdHours });
+    let decision = computeRenewalDecision(server, Date.now(), { thresholdHours });
     const label = serverLabel(server);
+
+    // 每天固定时刻运行时，可能比上一次续期完成时间早几秒，导致剩余时间略大于 24 小时。
+    // 若只差很短时间就进入续期窗口，则等待后重试，避免白白跳过一个周期。
+    const graceMs = Math.max(0, cooldownGraceMinutes) * 60 * 1000;
+    if (
+      decision.action === 'skip' &&
+      decision.reason === 'cooldown' &&
+      graceMs > 0 &&
+      decision.cooldownMs <= graceMs
+    ) {
+      const waitMs = decision.cooldownMs + 2000;
+      logger.info(
+        `${label}：距续期窗口还有 ${formatDuration(decision.cooldownMs)}，等待 ${formatDuration(waitMs)} 后重试...`,
+      );
+      await sleep(waitMs);
+      decision = computeRenewalDecision(server, Date.now(), { thresholdHours });
+    }
 
     if (decision.action === 'skip') {
       logger.info(`${label}：${describeSkip(decision)}`);

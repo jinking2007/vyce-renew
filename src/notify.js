@@ -52,6 +52,10 @@ export function buildApiMessage(summary, { baseUrl = 'https://vyce.cloud', dryRu
   lines.push(`时间：${formatTimestamp(now)}`);
   lines.push('');
 
+  if (renewed.length === 0 && planned.length === 0 && failed.length === 0) {
+    lines.push('<b>状态：无需续期</b>（服务器仍在冷却期）');
+  }
+
   if (renewed.length > 0) {
     lines.push(`<b>✅ 续期成功：${renewed.length} 台</b>`);
     for (const item of renewed) {
@@ -140,7 +144,6 @@ export function buildTestMessage({ now = Date.now() } = {}) {
 export function isTelegramConfigured(config) {
   return Boolean(config?.telegramNotify && config?.telegramBotToken && config?.telegramChatId);
 }
-
 export async function sendTelegramMessage({
   token,
   chatId,
@@ -213,7 +216,7 @@ export async function notifyApiResult({ config, logger, summary, dryRun = false,
     (summary?.renewed?.length ?? 0) > 0 ||
     (summary?.planned?.length ?? 0) > 0 ||
     (summary?.failed?.length ?? 0) > 0;
-  if (!hasNews) {
+  if (!hasNews && !config.telegramNotifyAlways) {
     return { sent: false, reason: 'nothing-to-report' };
   }
   return deliver({

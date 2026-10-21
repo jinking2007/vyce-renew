@@ -103,6 +103,7 @@ async function commandRenew(config, logger, values) {
       logger,
       serverSelectors: config.serverSelectors,
       thresholdHours: config.thresholdHours,
+      cooldownGraceMinutes: config.cooldownGraceMinutes,
       dryRun,
     });
   } catch (error) {
@@ -233,6 +234,7 @@ async function commandDaemon(config, logger, values) {
         logger,
         serverSelectors: config.serverSelectors,
         thresholdHours: config.thresholdHours,
+        cooldownGraceMinutes: config.cooldownGraceMinutes,
         dryRun: config.dryRun,
       });
       await notifyApiResult({ config: notifyConfig, logger, summary, dryRun: config.dryRun });

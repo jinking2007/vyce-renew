@@ -160,6 +160,34 @@ test('runRenewal：单台续期失败会记录到 failed，不影响其他服务
   }
 });
 
+test('runRenewal：距续期窗口只差几秒时会等待并自动续期', async () => {
+  const now = Date.now();
+  const mock = await startMockServer({
+    servers: [
+      {
+        id: 'edge',
+        name: 'edge-server',
+        source: 'free',
+        status: 'running',
+        expiresAt: now + 24 * HOUR_MS + 200,
+      },
+    ],
+  });
+
+  try {
+    const summary = await runRenewal({
+      client: makeClient(mock.baseUrl),
+      logger: silentLogger,
+      thresholdHours: 24,
+      cooldownGraceMinutes: 0.1,
+    });
+    assert.equal(summary.renewed.length, 1);
+    assert.deepEqual(mock.state.renewCalls, ['edge']);
+  } finally {
+    await mock.close();
+  }
+});
+
 test('VyceClient：401 会抛出 VyceAuthError', async () => {
   const mock = await startMockServer({ servers: [], meStatus: 401 });
   try {
