@@ -138,7 +138,7 @@ npm run renew:ui -- --headed   # 显示浏览器窗口（默认无头）
 | `VYCE_LOGIN_TIMEOUT_SECONDS` | `600` | 等待 GitHub 登录的超时时间 |
 | `VYCE_TIMEOUT_MS` | `20000` | 单个 HTTP 请求超时 |
 
-> 在 GitHub Actions 中只能使用 `VYCE_COOKIE`（或把 `.auth/state.json` 内容转成 Secret），因为浏览器登录需要人工操作。
+> 在 GitHub Actions 中请使用 `VYCE_COOKIE` Secret，因为浏览器登录需要人工操作。
 
 ## 浏览器点击模式
 
