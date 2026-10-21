@@ -1,0 +1,46 @@
+name: vyce-renew
+
+on:
+  schedule:
+    # 每 12 小时检查一次：站点有 24 小时冷却，脚本只会在到期窗口内真正续期，
+    # 因此实际仍是每 24 小时续期一次，同时避免 GitHub 定时任务延迟导致错过窗口。
+    - cron: '17 3,15 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: '只检查，不续期'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vyce-renew
+  cancel-in-progress: false
+
+jobs:
+  renew:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+
+      - name: Renew servers
+        run: npm run renew
+        env:
+          VYCE_COOKIE: ${{ secrets.VYCE_COOKIE }}
+          VYCE_DRY_RUN: ${{ github.event.inputs.dry_run == 'true' && 'true' || 'false' }}
+          TZ: Asia/Shanghai

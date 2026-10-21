@@ -1,0 +1,17 @@
+services:
+  vyce-renew:
+    build: .
+    container_name: vyce-renew
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      TZ: Asia/Shanghai
+    volumes:
+      # 如果使用 npm run login 生成的会话文件，可以挂载进来（只读即可）
+      - ./.auth:/app/.auth:ro
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'

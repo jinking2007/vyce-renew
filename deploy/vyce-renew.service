@@ -1,0 +1,20 @@
+[Unit]
+Description=vyce.cloud auto renew
+Documentation=https://github.com/jinking2007/vyce-renew
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/vyce-renew
+EnvironmentFile=/opt/vyce-renew/.env
+ExecStart=/usr/bin/node src/cli.js daemon
+Restart=always
+RestartSec=30
+# 可选：限制权限
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target
