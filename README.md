@@ -71,7 +71,7 @@ crontab -e
 
 1. 把本仓库推送到你自己的 GitHub 仓库；
 2. 在本地运行 `npm run export-cookie`，复制输出的整行 Cookie；
-3. 把 `deploy/renew.workflow.yml` 复制到 `.github/workflows/renew.yml` 并提交（用于让 GitHub 识别定时任务）；
+3. 运行 `npm run setup:actions` 生成 `.github/workflows/renew.yml`，然后提交并推送（也可以手动复制 `deploy/renew.workflow.yml`）；
 4. 打开仓库 **Settings → Secrets and variables → Actions → New repository secret**，名称填 `VYCE_COOKIE`，值粘贴刚才的 Cookie；
 5. 打开 **Actions → vyce-renew → Run workflow** 手动跑一次验证。
 
