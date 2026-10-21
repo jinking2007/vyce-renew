@@ -106,5 +106,5 @@ export function formatTimestamp(value) {
   if (timestamp === null) {
     return '未知';
   }
-  return new Date(timestamp).toISOString().replace('T', ' ').replace('.000Z', ' UTC');
+  return new Date(timestamp).toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, ' UTC');
 }

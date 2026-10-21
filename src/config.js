@@ -61,5 +61,9 @@ export function loadConfig(env = process.env) {
     headless: readBoolean(env, 'VYCE_HEADLESS', true),
     loginTimeoutSeconds: readNumber(env, 'VYCE_LOGIN_TIMEOUT_SECONDS', 600, { min: 30, max: 3600 }),
     timeoutMs: readNumber(env, 'VYCE_TIMEOUT_MS', 20000, { min: 1000, max: 120000 }),
+    telegramBotToken: readString(env, 'TELEGRAM_BOT_TOKEN'),
+    telegramChatId: readString(env, 'TELEGRAM_CHAT_ID'),
+    telegramApiBase: readString(env, 'TELEGRAM_API_BASE', 'https://api.telegram.org').replace(/\/+$/, ''),
+    telegramNotify: readBoolean(env, 'TELEGRAM_NOTIFY', true),
   };
 }

@@ -5,6 +5,7 @@
 - 支持 **API 模式**（默认，稳定、适合定时任务）和 **浏览器点击模式**（真实打开页面点 Renew）
 - 每 24 小时自动检查一次；站点有 24 小时冷却，脚本只会在允许续期时动手，不会重复续期
 - 支持 GitHub Actions（免服务器）、Docker、systemd、cron、常驻进程
+- 支持 Telegram 通知：续期成功、部分失败、登录失效时推送到手机
 - 内置重试、冷却判断、续期结果校验和清晰的中文日志
 - 单元测试 + 本地 mock 集成测试
 
@@ -72,8 +73,19 @@ crontab -e
 1. 把本仓库推送到你自己的 GitHub 仓库；
 2. 在本地运行 `npm run export-cookie`，复制输出的整行 Cookie；
 3. 运行 `npm run setup:actions` 生成 `.github/workflows/renew.yml`，然后提交并推送（也可以手动复制 `deploy/renew.workflow.yml`）；
-4. 打开仓库 **Settings → Secrets and variables → Actions → New repository secret**，名称填 `VYCE_COOKIE`，值粘贴刚才的 Cookie；
+4. 打开仓库 **Settings → Secrets and variables → Actions → New repository secret**，依次添加：
+   - `VYCE_COOKIE`：`npm run export-cookie` 输出的 Cookie（必填）
+   - `TELEGRAM_BOT_TOKEN`：Telegram 机器人 Token（可选，见下文）
+   - `TELEGRAM_CHAT_ID`：接收通知的 chat_id（可选）
 5. 打开 **Actions → vyce-renew → Run workflow** 手动跑一次验证。
+
+也可以用 GitHub CLI 一次性写入 Secret：
+
+```bash
+gh secret set VYCE_COOKIE
+gh secret set TELEGRAM_BOT_TOKEN
+gh secret set TELEGRAM_CHAT_ID
+```
 
 工作流默认每 12 小时检查一次（`17 3,15 * * *` UTC）。因为站点有 24 小时冷却，脚本只会在允许续期的窗口内真正续期，所以实际仍是每 24 小时续期一次；12 小时一次的检查可以避免 GitHub 定时任务延迟导致错过续期窗口。
 
@@ -110,12 +122,14 @@ sudo journalctl -u vyce-renew -f
 | `npm run status` | 查看账号信息和每台服务器的到期/冷却状态 |
 | `npm run daemon` | 常驻运行，默认每 24 小时检查一次 |
 | `npm run export-cookie` | 打印 Cookie（stdout），用于配置 `VYCE_COOKIE` |
+| `npm run notify-test` | 发送一条 Telegram 测试消息，验证配置 |
 
 常用参数：
 
 ```bash
 npm run renew -- --dry-run     # 只检查，不续期
 npm run renew -- --json        # 输出 JSON（便于监控）
+npm run renew -- --no-notify   # 本次不发送 Telegram 通知
 npm run daemon -- --once       # 常驻模式只跑一轮
 npm run daemon -- --interval 12
 npm run renew:ui -- --headed   # 显示浏览器窗口（默认无头）
@@ -137,8 +151,62 @@ npm run renew:ui -- --headed   # 显示浏览器窗口（默认无头）
 | `VYCE_HEADLESS` | `true` | 浏览器模式是否无头；首次 `login` 始终需要可见窗口 |
 | `VYCE_LOGIN_TIMEOUT_SECONDS` | `600` | 等待 GitHub 登录的超时时间 |
 | `VYCE_TIMEOUT_MS` | `20000` | 单个 HTTP 请求超时 |
+| `TELEGRAM_BOT_TOKEN` | 空 | Telegram 机器人 Token（未填写则不通知） |
+| `TELEGRAM_CHAT_ID` | 空 | 接收通知的 chat_id |
+| `TELEGRAM_NOTIFY` | `true` | 是否启用 Telegram 通知 |
+| `TELEGRAM_API_BASE` | `https://api.telegram.org` | Telegram API 地址（一般不用改） |
 
 > 在 GitHub Actions 中请使用 `VYCE_COOKIE` Secret，因为浏览器登录需要人工操作。
+
+## Telegram 通知
+
+续期结果可以推送到 Telegram。所有凭据都通过环境变量 / GitHub Secrets 传入，不会写进代码或日志。
+
+### 1. 创建机器人和获取 chat_id
+
+1. 在 Telegram 搜索 **@BotFather**，发送 `/newbot`，按提示创建机器人，得到形如 `123456:ABC-DEF...` 的 Token；
+2. 先给刚创建的机器人发送一条 `/start`（否则机器人无法主动给你发消息）；
+3. 获取 chat_id：浏览器打开
+   `https://api.telegram.org/bot<你的Token>/getUpdates`，在返回 JSON 里找 `message.chat.id`；
+   也可以给 **@userinfobot** 发消息直接查看。
+
+群组通知同理：把机器人拉进群，给它发一条消息，再从 `getUpdates` 里取群的 chat_id（通常是负数）。
+
+### 2. 本地测试
+
+在 `.env` 中填写：
+
+```dotenv
+TELEGRAM_BOT_TOKEN=123456:ABC-DEF...
+TELEGRAM_CHAT_ID=123456789
+```
+
+然后执行：
+
+```bash
+npm run notify-test
+```
+
+收到“vyce.cloud 通知测试”即配置成功。
+
+### 3. 配置到 GitHub Secrets
+
+仓库 **Settings → Secrets and variables → Actions** 中添加：
+
+- `VYCE_COOKIE`（必填）
+- `TELEGRAM_BOT_TOKEN`
+- `TELEGRAM_CHAT_ID`
+
+工作流模板已经把这些 Secret 注入到 `npm run renew` 的环境变量中。也支持在 Secret 中设置 `TELEGRAM_NOTIFY=false` 临时关闭通知。
+
+### 4. 什么时候会收到通知
+
+- ✅ 有服务器续期成功；
+- ⚠️ 有服务器续期失败（部分失败也会发）；
+- ❌ 登录失效、网络错误等整体失败；
+- 🧪 手动 `--dry-run` 时有计划续期；
+- 全部处于冷却期时不发送，避免每 12 小时刷屏；
+- 通知发送失败只记录警告，不会影响续期本身。
 
 ## 浏览器点击模式
 
@@ -166,6 +234,7 @@ src/
   vyce-client.js   HTTP 客户端（Cookie、超时、重试、错误分类）
   decisions.js     与站点一致的续期/冷却判定
   cookies.js       Cookie 解析与 storageState 读取
+  notify.js        Telegram 通知（消息格式、发送、失败降级）
   config.js        环境变量
 test/              单元测试与 mock 集成测试
 deploy/renew.workflow.yml     GitHub Actions 定时任务模板（复制到 .github/workflows/renew.yml）
@@ -205,6 +274,14 @@ npm run renew:ui -- --headed
 **6. 账号提示注册关闭 / 账号太新**
 
 这是站点自身的限制（GitHub 账号需满 30 天等），与脚本无关。
+
+**7. 收不到 Telegram 通知**
+
+- 先运行 `npm run notify-test` 自测；
+- 确认已经给机器人发送过 `/start`，或已把机器人拉进群；
+- 确认 `TELEGRAM_CHAT_ID` 正确（群组 ID 通常是负数）；
+- 如果 Secret 中设置了 `TELEGRAM_NOTIFY=false`，通知会被关闭；
+- 通知失败不会影响续期，日志里会有“Telegram 通知发送失败”的警告。
 
 ## 安全说明
 

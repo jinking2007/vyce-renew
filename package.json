@@ -14,6 +14,7 @@
     "status": "node --env-file-if-exists=.env src/cli.js status",
     "daemon": "node --env-file-if-exists=.env src/cli.js daemon",
     "export-cookie": "node --env-file-if-exists=.env src/cli.js export-cookie",
+    "notify-test": "node --env-file-if-exists=.env src/cli.js notify-test",
     "setup:actions": "node -e \"const fs=require('node:fs');fs.mkdirSync('.github/workflows',{recursive:true});fs.copyFileSync('deploy/renew.workflow.yml','.github/workflows/renew.yml');console.log('已创建 .github/workflows/renew.yml，提交并推送后即可启用定时任务。')\"",
     "test": "node --test"
   },

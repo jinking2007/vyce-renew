@@ -7,6 +7,7 @@ import { HOUR_MS, computeRenewalDecision, formatDuration, formatTimestamp, selec
 import { VyceAuthError, VyceClient, resolveCookieHeader } from './vyce-client.js';
 import { runRenewal } from './renew.js';
 import { loginWithBrowser, renewViaUi } from './browser.js';
+import { notifyApiResult, notifyFailure, notifyTest, notifyUiResult } from './notify.js';
 
 const HELP = `
 vyce.cloud 自动续期工具
@@ -18,12 +19,14 @@ vyce.cloud 自动续期工具
   npm run status           查看账号下服务器状态
   npm run daemon           常驻运行，每 24 小时自动续期
   npm run export-cookie    打印 Cookie，用于配置 GitHub Actions Secret
+  npm run notify-test      发送一条 Telegram 测试消息
 
 常用选项:
   --dry-run                只打印将要执行的操作，不真正续期
   --ui                     使用浏览器点击方式续期
   --headed                 显示浏览器窗口（配合 --ui 使用）
   --json                   以 JSON 输出结果（日志仍输出到 stderr）
+  --no-notify              本次不发送 Telegram 通知
   --once                   配合 daemon：只运行一次
   --interval <小时>        配合 daemon：覆盖检查间隔
   -h, --help               显示帮助
@@ -61,21 +64,31 @@ async function commandLogin(config, logger, values) {
 
 async function commandRenew(config, logger, values) {
   const dryRun = Boolean(values['dry-run']) || config.dryRun;
+  const notifyConfig = values['no-notify'] ? { ...config, telegramNotify: false } : config;
 
   if (values.ui) {
     if (dryRun) {
       throw new Error('--ui 与 --dry-run 不能同时使用。');
     }
-    const summary = await renewViaUi({
-      baseUrl: config.baseUrl,
-      statePath: config.statePath,
-      cookie: config.cookie,
-      headless: values.headed ? false : config.headless,
-      logger,
-    });
+
+    let summary;
+    try {
+      summary = await renewViaUi({
+        baseUrl: config.baseUrl,
+        statePath: config.statePath,
+        cookie: config.cookie,
+        headless: values.headed ? false : config.headless,
+        logger,
+      });
+    } catch (error) {
+      await notifyFailure({ config: notifyConfig, logger, error });
+      throw error;
+    }
+
     if (values.json) {
       process.stdout.write(`${toJson(summary)}\n`);
     }
+    await notifyUiResult({ config: notifyConfig, logger, summary });
     if (summary.failed > 0) {
       process.exitCode = 1;
     }
@@ -83,20 +96,32 @@ async function commandRenew(config, logger, values) {
   }
 
   const client = new VyceClient({ ...config, logger });
-  const summary = await runRenewal({
-    client,
-    logger,
-    serverSelectors: config.serverSelectors,
-    thresholdHours: config.thresholdHours,
-    dryRun,
-  });
+  let summary;
+  try {
+    summary = await runRenewal({
+      client,
+      logger,
+      serverSelectors: config.serverSelectors,
+      thresholdHours: config.thresholdHours,
+      dryRun,
+    });
+  } catch (error) {
+    await notifyFailure({ config: notifyConfig, logger, error });
+    throw error;
+  }
 
   if (values.json) {
     process.stdout.write(`${toJson(summary)}\n`);
   }
+  await notifyApiResult({ config: notifyConfig, logger, summary, dryRun });
   if (summary.failed.length > 0) {
     process.exitCode = 1;
   }
+}
+
+async function commandNotifyTest(config, logger, values) {
+  const notifyConfig = values['no-notify'] ? { ...config, telegramNotify: false } : config;
+  await notifyTest({ config: notifyConfig, logger });
 }
 
 async function commandStatus(config, logger, values) {
@@ -171,6 +196,7 @@ async function commandDaemon(config, logger, values) {
   }
   const intervalMs = intervalHours * HOUR_MS;
   const client = new VyceClient({ ...config, logger });
+  const notifyConfig = values['no-notify'] ? { ...config, telegramNotify: false } : config;
 
   let stopping = false;
   let wakeUp = null;
@@ -209,12 +235,14 @@ async function commandDaemon(config, logger, values) {
         thresholdHours: config.thresholdHours,
         dryRun: config.dryRun,
       });
+      await notifyApiResult({ config: notifyConfig, logger, summary, dryRun: config.dryRun });
     } catch (error) {
       if (error instanceof VyceAuthError) {
         logger.error(`登录已失效：${error.message}`);
       } else {
         logger.error(`本轮续期失败：${describeError(error)}`);
       }
+      await notifyFailure({ config: notifyConfig, logger, error });
     }
 
     if (values.once || stopping) {
@@ -248,6 +276,7 @@ async function main() {
       headed: { type: 'boolean', default: false },
       headless: { type: 'boolean', default: false },
       json: { type: 'boolean', default: false },
+      'no-notify': { type: 'boolean', default: false },
       once: { type: 'boolean', default: false },
       interval: { type: 'string' },
       help: { type: 'boolean', short: 'h', default: false },
@@ -278,6 +307,9 @@ async function main() {
       break;
     case 'export-cookie':
       await commandExportCookie(config, logger);
+      break;
+    case 'notify-test':
+      await commandNotifyTest(config, logger, values);
       break;
     default:
       process.stderr.write(`未知命令：${command}\n${HELP}`);

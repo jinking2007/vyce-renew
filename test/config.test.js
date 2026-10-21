@@ -15,6 +15,10 @@ test('loadConfig 提供合理默认值', () => {
   assert.equal(config.timeoutMs, 20000);
   assert.deepEqual(config.serverSelectors, []);
   assert.equal(path.basename(config.statePath), 'state.json');
+  assert.equal(config.telegramBotToken, '');
+  assert.equal(config.telegramChatId, '');
+  assert.equal(config.telegramApiBase, 'https://api.telegram.org');
+  assert.equal(config.telegramNotify, true);
 });
 
 test('loadConfig 读取环境变量并去掉末尾斜杠', () => {
@@ -26,6 +30,10 @@ test('loadConfig 读取环境变量并去掉末尾斜杠', () => {
     VYCE_INTERVAL_HOURS: '6',
     VYCE_DRY_RUN: 'yes',
     VYCE_HEADLESS: '0',
+    TELEGRAM_BOT_TOKEN: '123:abc',
+    TELEGRAM_CHAT_ID: '42',
+    TELEGRAM_API_BASE: 'http://127.0.0.1:8080/',
+    TELEGRAM_NOTIFY: 'false',
   });
   assert.equal(config.baseUrl, 'https://example.test');
   assert.equal(config.cookie, 'a=1');
@@ -34,6 +42,10 @@ test('loadConfig 读取环境变量并去掉末尾斜杠', () => {
   assert.equal(config.intervalHours, 6);
   assert.equal(config.dryRun, true);
   assert.equal(config.headless, false);
+  assert.equal(config.telegramBotToken, '123:abc');
+  assert.equal(config.telegramChatId, '42');
+  assert.equal(config.telegramApiBase, 'http://127.0.0.1:8080');
+  assert.equal(config.telegramNotify, false);
 });
 
 test('loadConfig 对非法数字和布尔值抛出错误', () => {
