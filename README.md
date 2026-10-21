@@ -71,8 +71,9 @@ crontab -e
 
 1. 把本仓库推送到你自己的 GitHub 仓库；
 2. 在本地运行 `npm run export-cookie`，复制输出的整行 Cookie；
-3. 打开仓库 **Settings → Secrets and variables → Actions → New repository secret**，名称填 `VYCE_COOKIE`，值粘贴刚才的 Cookie；
-4. 打开 **Actions → vyce-renew → Run workflow** 手动跑一次验证。
+3. 把 `deploy/renew.workflow.yml` 复制到 `.github/workflows/renew.yml` 并提交（用于让 GitHub 识别定时任务）；
+4. 打开仓库 **Settings → Secrets and variables → Actions → New repository secret**，名称填 `VYCE_COOKIE`，值粘贴刚才的 Cookie；
+5. 打开 **Actions → vyce-renew → Run workflow** 手动跑一次验证。
 
 工作流默认每 12 小时检查一次（`17 3,15 * * *` UTC）。因为站点有 24 小时冷却，脚本只会在允许续期的窗口内真正续期，所以实际仍是每 24 小时续期一次；12 小时一次的检查可以避免 GitHub 定时任务延迟导致错过续期窗口。
 
@@ -167,7 +168,7 @@ src/
   cookies.js       Cookie 解析与 storageState 读取
   config.js        环境变量
 test/              单元测试与 mock 集成测试
-.github/workflows/renew.yml   GitHub Actions 定时任务
+deploy/renew.workflow.yml     GitHub Actions 定时任务模板（复制到 .github/workflows/renew.yml）
 deploy/            systemd 服务文件
 ```
 
