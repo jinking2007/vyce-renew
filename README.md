@@ -31,6 +31,9 @@ git clone https://github.com/jinking2007/vyce-renew.git
 cd vyce-renew
 npm install
 
+# 第一次使用浏览器登录前，先安装 Chromium
+npx playwright install chromium
+
 # 1. 登录一次（会弹出浏览器，用 GitHub 完成登录，含两步验证）
 npm run login
 
@@ -44,7 +47,7 @@ npm run renew -- --dry-run
 npm run renew
 ```
 
-如果没有图形界面（例如直接 SSH 到 VPS），请在本地电脑执行 `npm run login`，然后把生成的 `.auth/state.json` 上传到服务器同一路径；或者直接把浏览器 Cookie 写入 `.env` 的 `VYCE_COOKIE`（见下文）。
+如果没有图形界面（例如直接 SSH 到 VPS），请在本地电脑执行 `npm run login`，然后把生成的 `.auth/state.json` 上传到服务器同一路径；或者直接把浏览器 Cookie 写入 `.env` 的 `VYCE_COOKIE`（获取方法：登录后按 F12 → Network → 刷新 → 点 `/api/me` 请求 → Request Headers → 复制整行 `Cookie` 的值）。
 
 ## 每 24 小时自动运行
 
