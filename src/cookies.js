@@ -7,7 +7,9 @@ export function parseCookieString(raw) {
   if (!raw || typeof raw !== 'string') {
     return [];
   }
-  return raw
+  // 允许直接粘贴 DevTools 里的整行请求头：Cookie: a=1; b=2
+  const cleaned = raw.trim().replace(/^cookie:\s*/i, '');
+  return cleaned
     .split(';')
     .map((part) => part.trim())
     .filter(Boolean)

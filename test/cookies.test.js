@@ -10,6 +10,16 @@ test('parseCookieString 解析浏览器 Cookie 请求头', () => {
   ]);
 });
 
+test('parseCookieString 支持直接粘贴带 Cookie: 前缀的请求头', () => {
+  assert.deepEqual(parseCookieString('Cookie: a=1; b=2'), [
+    { name: 'a', value: '1' },
+    { name: 'b', value: '2' },
+  ]);
+  assert.deepEqual(parseCookieString('  cookie:  vyce_session=abc  '), [
+    { name: 'vyce_session', value: 'abc' },
+  ]);
+});
+
 test('parseCookieString 忽略空值和非法片段', () => {
   assert.deepEqual(parseCookieString(' ; broken ; =novalue; ok=1 ; '), [{ name: 'ok', value: '1' }]);
   assert.deepEqual(parseCookieString(''), []);
