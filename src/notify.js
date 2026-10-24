@@ -44,15 +44,16 @@ export function buildApiMessage(summary, { baseUrl = 'https://vyce.cloud', dryRu
   const planned = Array.isArray(summary?.planned) ? summary.planned : [];
   const skipped = Array.isArray(summary?.skipped) ? summary.skipped : [];
   const failed = Array.isArray(summary?.failed) ? summary.failed : [];
+  const manual = Array.isArray(summary?.manual) ? summary.manual : [];
   const lines = [];
 
-  const icon = failed.length > 0 ? '⚠️' : dryRun ? '🧪' : '✅';
+  const icon = failed.length > 0 ? '⚠️' : manual.length > 0 ? '🔐' : dryRun ? '🧪' : '✅';
   lines.push(`<b>${icon} vyce.cloud ${dryRun ? '续期预检' : '自动续期'}</b>`);
   lines.push(`账号：<b>${escapeHtml(accountLabel(summary))}</b>`);
   lines.push(`时间：${formatTimestamp(now)}`);
   lines.push('');
 
-  if (renewed.length === 0 && planned.length === 0 && failed.length === 0) {
+  if (renewed.length === 0 && planned.length === 0 && failed.length === 0 && manual.length === 0) {
     lines.push('<b>状态：无需续期</b>（服务器仍在冷却期）');
   }
 
@@ -77,6 +78,15 @@ export function buildApiMessage(summary, { baseUrl = 'https://vyce.cloud', dryRu
     lines.push(`<b>❌ 续期失败：${failed.length} 台</b>`);
     for (const item of failed) {
       lines.push(`• <b>${escapeHtml(serverLabel(item.server))}</b>：${escapeHtml(item.error?.message || item.error)}`);
+    }
+  }
+
+  if (manual.length > 0) {
+    lines.push(`<b>🔐 需要手动验证：${manual.length} 台</b>`);
+    for (const item of manual) {
+      lines.push(
+        `• <b>${escapeHtml(serverLabel(item.server))}</b>：站点要求 CAPTCHA，请点击下方按钮打开控制台，点 Renew 并完成验证`,
+      );
     }
   }
 
@@ -149,6 +159,7 @@ export async function sendTelegramMessage({
   chatId,
   apiBase = 'https://api.telegram.org',
   text,
+  replyMarkup,
   timeoutMs = 10000,
   fetchImpl = fetch,
 }) {
@@ -167,6 +178,7 @@ export async function sendTelegramMessage({
         text,
         parse_mode: 'HTML',
         disable_web_page_preview: true,
+        ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
       }),
       signal: AbortSignal.timeout(timeoutMs),
     });
@@ -186,7 +198,7 @@ function redact(text, secret) {
   return secret ? value.split(secret).join('***') : value;
 }
 
-async function deliver({ config, logger, text, fetchImpl }) {
+async function deliver({ config, logger, text, replyMarkup, fetchImpl }) {
   if (!isTelegramConfigured(config)) {
     return { sent: false, reason: 'not-configured' };
   }
@@ -196,6 +208,7 @@ async function deliver({ config, logger, text, fetchImpl }) {
       chatId: config.telegramChatId,
       apiBase: config.telegramApiBase,
       text,
+      replyMarkup,
       timeoutMs: Math.min(config.timeoutMs ?? 10000, 15000),
       fetchImpl,
     });
@@ -212,17 +225,26 @@ export async function notifyApiResult({ config, logger, summary, dryRun = false,
   if (!isTelegramConfigured(config)) {
     return { sent: false, reason: 'not-configured' };
   }
+  const manualCount = summary?.manual?.length ?? 0;
   const hasNews =
     (summary?.renewed?.length ?? 0) > 0 ||
     (summary?.planned?.length ?? 0) > 0 ||
-    (summary?.failed?.length ?? 0) > 0;
+    (summary?.failed?.length ?? 0) > 0 ||
+    manualCount > 0;
   if (!hasNews && !config.telegramNotifyAlways) {
     return { sent: false, reason: 'nothing-to-report' };
   }
+  const replyMarkup =
+    manualCount > 0
+      ? {
+          inline_keyboard: [[{ text: '去完成验证并续期', url: `${config.baseUrl}/#/servers` }]],
+        }
+      : undefined;
   return deliver({
     config,
     logger,
     text: buildApiMessage(summary, { baseUrl: config.baseUrl, dryRun }),
+    replyMarkup,
     fetchImpl,
   });
 }

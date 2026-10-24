@@ -63,6 +63,7 @@ export async function runRenewal({
     planned: [],
     skipped: [],
     failed: [],
+    manual: [],
     nextDueAt: null,
   };
 
@@ -112,6 +113,13 @@ export async function runRenewal({
       if (error instanceof VyceAuthError) {
         throw error;
       }
+      if (isCaptchaError(error)) {
+        logger.warn(
+          `${label}：站点要求人机验证（CAPTCHA），API 无法自动完成，需要手动打开控制台续期。`,
+        );
+        summary.manual.push({ server, error });
+        continue;
+      }
       logger.error(`${label}：续期失败 - ${error.message}${error.code ? ` (${error.code})` : ''}`);
       summary.failed.push({ server, error });
       continue;
@@ -137,15 +145,26 @@ export async function runRenewal({
     summary.renewed.push({ server, previousExpiresAt, expiresAt: newExpiresAt, status: updated?.status ?? null });
   }
 
-  if (summary.renewed.length === 0 && summary.planned.length === 0 && summary.failed.length === 0) {
+  if (
+    summary.renewed.length === 0 &&
+    summary.planned.length === 0 &&
+    summary.failed.length === 0 &&
+    summary.manual.length === 0
+  ) {
     logger.info('本次没有需要续期的服务器。');
   }
 
   logger.info(
-    `本次结果：续期 ${summary.renewed.length} 台，计划 ${summary.planned.length} 台，跳过 ${summary.skipped.length} 台，失败 ${summary.failed.length} 台。`,
+    `本次结果：续期 ${summary.renewed.length} 台，计划 ${summary.planned.length} 台，跳过 ${summary.skipped.length} 台，` +
+      `需要手动验证 ${summary.manual.length} 台，失败 ${summary.failed.length} 台。`,
   );
 
   return summary;
+}
+
+export function isCaptchaError(error) {
+  const text = `${error?.code || ''} ${error?.message || ''}`.toLowerCase();
+  return /captcha|bestcap|human verification|verification required|verify (that )?you are human/.test(text);
 }
 
 function dryRunText(decision) {

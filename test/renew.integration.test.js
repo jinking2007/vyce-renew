@@ -7,7 +7,7 @@ import { runRenewal } from '../src/renew.js';
 
 const silentLogger = { debug() {}, info() {}, warn() {}, error() {} };
 
-async function startMockServer({ servers, meStatus = 200, renewFailures = new Set() } = {}) {
+async function startMockServer({ servers, meStatus = 200, renewFailures = new Set(), captchaServers = new Set() } = {}) {
   const state = {
     servers: structuredClone(servers),
     seenCookies: [],
@@ -42,6 +42,12 @@ async function startMockServer({ servers, meStatus = 200, renewFailures = new Se
       state.renewCalls.push(id);
       if (renewFailures.has(id)) {
         return reply(400, { error: 'renewal_failed', message: 'Renewal failed for test.' });
+      }
+      if (captchaServers.has(id)) {
+        return reply(400, {
+          error: 'captcha_required',
+          message: 'Please complete the CAPTCHA verification first.',
+        });
       }
       const target = state.servers.find((server) => server.id === id);
       if (!target) {
@@ -155,6 +161,30 @@ test('runRenewal：单台续期失败会记录到 failed，不影响其他服务
     assert.equal(summary.renewed.length, 1);
     assert.equal(summary.renewed[0].server.id, 'good');
     assert.deepEqual(mock.state.renewCalls.sort(), ['bad', 'good']);
+  } finally {
+    await mock.close();
+  }
+});
+
+test('runRenewal：CAPTCHA 错误归类为 manual，而不是普通失败', async () => {
+  const now = Date.now();
+  const mock = await startMockServer({
+    servers: [
+      { id: 'cap', name: 'captcha-server', source: 'free', status: 'running', expiresAt: now + HOUR_MS },
+    ],
+    captchaServers: new Set(['cap']),
+  });
+
+  try {
+    const summary = await runRenewal({
+      client: makeClient(mock.baseUrl),
+      logger: silentLogger,
+      thresholdHours: 24,
+    });
+    assert.equal(summary.manual.length, 1);
+    assert.equal(summary.manual[0].server.id, 'cap');
+    assert.equal(summary.failed.length, 0);
+    assert.deepEqual(mock.state.renewCalls, ['cap']);
   } finally {
     await mock.close();
   }

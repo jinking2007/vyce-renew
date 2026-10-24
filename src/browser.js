@@ -222,6 +222,21 @@ export async function renewViaUi({ baseUrl, statePath, cookie = '', headless = t
           await target.click({ timeout: 15000 });
         }
 
+        // 站点新增了 Bestcap 人机验证：脚本不绕过验证码，检测到后直接提示手动处理。
+        const captchaVisible = await page
+          .locator('iframe[title="Bestcap human verification"]')
+          .first()
+          .waitFor({ state: 'visible', timeout: 2500 })
+          .then(() => true)
+          .catch(() => false);
+
+        if (captchaVisible) {
+          summary.failed += 1;
+          summary.messages.push('站点要求 CAPTCHA 验证，请手动完成验证后点击 Renew');
+          logger?.warn('检测到 Bestcap 人机验证。本工具不会绕过验证码，请在浏览器中手动勾选后再点 Renew。');
+          break;
+        }
+
         const toast = page.locator('[data-sonner-toast]').first();
         await toast.waitFor({ state: 'visible', timeout: 20000 }).catch(() => {});
         const toastText = ((await toast.textContent().catch(() => '')) || '').trim();

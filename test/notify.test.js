@@ -238,6 +238,59 @@ test('TELEGRAM_NOTIFY=always 时即使全部冷却也发送每日状态', async 
   }
 });
 
+test('buildApiMessage 显示需要手动完成 CAPTCHA', () => {
+  const text = buildApiMessage({
+    ...sampleSummary,
+    renewed: [],
+    skipped: [],
+    manual: [{ server: { id: 'srv-1', name: 'tokyo-mini' }, error: { code: 'captcha_required' } }],
+  });
+  assert.match(text, /需要手动验证：1 台/);
+  assert.match(text, /CAPTCHA/);
+  assert.match(text, /tokyo-mini/);
+});
+
+test('notifyApiResult 需要手动验证时附带“去续期”按钮', async () => {
+  const mock = await startTelegramMock();
+  try {
+    const result = await notifyApiResult({
+      config: makeConfig(mock.apiBase),
+      logger: silentLogger,
+      summary: {
+        ...sampleSummary,
+        renewed: [],
+        skipped: [],
+        manual: [{ server: { id: 'srv-1', name: 'tokyo-mini' }, error: { code: 'captcha_required' } }],
+      },
+    });
+    assert.equal(result.sent, true);
+    const body = mock.requests[0].body;
+    assert.equal(body.reply_markup.inline_keyboard[0][0].url, 'https://vyce.cloud/#/servers');
+    assert.match(body.reply_markup.inline_keyboard[0][0].text, /去完成验证/);
+    assert.match(body.text, /需要手动验证/);
+  } finally {
+    await mock.close();
+  }
+});
+
+test('sendTelegramMessage 支持自定义 reply_markup', async () => {
+  const mock = await startTelegramMock();
+  try {
+    await sendTelegramMessage({
+      token: '123456:TEST-TOKEN',
+      chatId: '42',
+      apiBase: mock.apiBase,
+      text: 'hi',
+      replyMarkup: { inline_keyboard: [[{ text: 'open', url: 'https://vyce.cloud' }]] },
+    });
+    assert.deepEqual(mock.requests[0].body.reply_markup, {
+      inline_keyboard: [[{ text: 'open', url: 'https://vyce.cloud' }]],
+    });
+  } finally {
+    await mock.close();
+  }
+});
+
 test('notifyTest 未配置时抛出明确错误', async () => {
   await assert.rejects(
     () =>
