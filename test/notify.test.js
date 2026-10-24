@@ -105,6 +105,18 @@ test('buildUiMessage 汇总浏览器点击结果', () => {
   assert.match(text, /Renewed for 2 days/);
 });
 
+test('buildUiMessage 标记 CAPTCHA 已自动通过', () => {
+  const text = buildUiMessage({
+    clicked: 1,
+    succeeded: 1,
+    failed: 0,
+    captchaSolved: true,
+    messages: ['Renewed for 2 days'],
+  });
+  assert.match(text, /验证并续期/);
+  assert.match(text, /CAPTCHA：已通过真实鼠标点击完成验证/);
+});
+
 test('buildFailureMessage 对 401 给出重新登录提示', () => {
   const text = buildFailureMessage(new VyceAuthError('登录已过期'));
   assert.match(text, /续期失败/);

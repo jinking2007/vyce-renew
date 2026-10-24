@@ -21,6 +21,9 @@ test('loadConfig 提供合理默认值', () => {
   assert.equal(config.telegramNotify, true);
   assert.equal(config.telegramNotifyAlways, false);
   assert.equal(config.cooldownGraceMinutes, 5);
+  assert.equal(config.captchaBrowser, true);
+  assert.equal(config.captchaTimeoutSeconds, 60);
+  assert.equal(config.browserChannel, '');
 });
 
 test('loadConfig 读取环境变量并去掉末尾斜杠', () => {
@@ -37,6 +40,9 @@ test('loadConfig 读取环境变量并去掉末尾斜杠', () => {
     TELEGRAM_API_BASE: 'http://127.0.0.1:8080/',
     TELEGRAM_NOTIFY: 'always',
     VYCE_COOLDOWN_GRACE_MINUTES: '2',
+    VYCE_CAPTCHA_BROWSER: 'false',
+    VYCE_CAPTCHA_TIMEOUT_SECONDS: '120',
+    VYCE_BROWSER_CHANNEL: 'chrome',
   });
   assert.equal(config.baseUrl, 'https://example.test');
   assert.equal(config.cookie, 'a=1');
@@ -51,6 +57,9 @@ test('loadConfig 读取环境变量并去掉末尾斜杠', () => {
   assert.equal(config.telegramNotify, true);
   assert.equal(config.telegramNotifyAlways, true);
   assert.equal(config.cooldownGraceMinutes, 2);
+  assert.equal(config.captchaBrowser, false);
+  assert.equal(config.captchaTimeoutSeconds, 120);
+  assert.equal(config.browserChannel, 'chrome');
 });
 
 test('TELEGRAM_NOTIFY=false 关闭通知，always 作为每日心跳', () => {

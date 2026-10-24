@@ -62,9 +62,38 @@ async function commandLogin(config, logger, values) {
   logger.info('提示：运行 "npm run export-cookie" 可打印 Cookie，用于 GitHub Actions Secret。');
 }
 
+async function tryBrowserCaptcha({ config, logger, summary, headless }) {
+  if (!summary?.manual?.length || !config.captchaBrowser) {
+    return null;
+  }
+
+  logger.info(
+    `检测到 ${summary.manual.length} 台服务器需要 CAPTCHA，尝试用浏览器真实点击验证框（headless=${headless}）...`,
+  );
+
+  try {
+    const uiSummary = await renewViaUi({
+      baseUrl: config.baseUrl,
+      statePath: config.statePath,
+      cookie: config.cookie,
+      headless,
+      timeoutSeconds: config.captchaTimeoutSeconds,
+      channel: config.browserChannel,
+      logger,
+    });
+    summary.browserFallback = uiSummary;
+    return uiSummary;
+  } catch (error) {
+    logger.warn(`浏览器自动验证失败：${describeError(error)}`);
+    summary.browserFallbackError = error.message;
+    return null;
+  }
+}
+
 async function commandRenew(config, logger, values) {
   const dryRun = Boolean(values['dry-run']) || config.dryRun;
   const notifyConfig = values['no-notify'] ? { ...config, telegramNotify: false } : config;
+  const headless = values.headed ? false : config.headless;
 
   if (values.ui) {
     if (dryRun) {
@@ -77,7 +106,9 @@ async function commandRenew(config, logger, values) {
         baseUrl: config.baseUrl,
         statePath: config.statePath,
         cookie: config.cookie,
-        headless: values.headed ? false : config.headless,
+        headless,
+        timeoutSeconds: config.captchaTimeoutSeconds,
+        channel: config.browserChannel,
         logger,
       });
     } catch (error) {
@@ -89,7 +120,7 @@ async function commandRenew(config, logger, values) {
       process.stdout.write(`${toJson(summary)}\n`);
     }
     await notifyUiResult({ config: notifyConfig, logger, summary });
-    if (summary.failed > 0) {
+    if (summary.failed > 0 && !summary.captchaAttempted) {
       process.exitCode = 1;
     }
     return;
@@ -111,11 +142,27 @@ async function commandRenew(config, logger, values) {
     throw error;
   }
 
+  // 如果 API 被 CAPTCHA 拦下，尝试用真实浏览器完成验证。
+  const uiSummary = dryRun ? null : await tryBrowserCaptcha({ config, logger, summary, headless });
+  const captchaSolved = (uiSummary?.succeeded ?? 0) > 0;
+
   if (values.json) {
     process.stdout.write(`${toJson(summary)}\n`);
   }
-  await notifyApiResult({ config: notifyConfig, logger, summary, dryRun });
-  if (summary.failed.length > 0) {
+
+  if (captchaSolved) {
+    await notifyUiResult({ config: notifyConfig, logger, summary: uiSummary });
+  } else {
+    if (uiSummary?.captchaAttempted) {
+      logger.warn('浏览器未能通过 CAPTCHA，改为发送手动续期提醒。');
+    }
+    await notifyApiResult({ config: notifyConfig, logger, summary, dryRun });
+  }
+
+  if (
+    summary.failed.length > 0 ||
+    ((uiSummary?.failed ?? 0) > 0 && !uiSummary?.captchaAttempted && summary.manual.length === 0)
+  ) {
     process.exitCode = 1;
   }
 }
@@ -198,6 +245,7 @@ async function commandDaemon(config, logger, values) {
   const intervalMs = intervalHours * HOUR_MS;
   const client = new VyceClient({ ...config, logger });
   const notifyConfig = values['no-notify'] ? { ...config, telegramNotify: false } : config;
+  const headless = values.headed ? false : config.headless;
 
   let stopping = false;
   let wakeUp = null;
@@ -237,7 +285,18 @@ async function commandDaemon(config, logger, values) {
         cooldownGraceMinutes: config.cooldownGraceMinutes,
         dryRun: config.dryRun,
       });
-      await notifyApiResult({ config: notifyConfig, logger, summary, dryRun: config.dryRun });
+
+      const uiSummary = config.dryRun
+        ? null
+        : await tryBrowserCaptcha({ config, logger, summary, headless });
+      if ((uiSummary?.succeeded ?? 0) > 0) {
+        await notifyUiResult({ config: notifyConfig, logger, summary: uiSummary });
+      } else {
+        if (uiSummary?.captchaAttempted) {
+          logger.warn('浏览器未能通过 CAPTCHA，改为发送手动续期提醒。');
+        }
+        await notifyApiResult({ config: notifyConfig, logger, summary, dryRun: config.dryRun });
+      }
     } catch (error) {
       if (error instanceof VyceAuthError) {
         logger.error(`登录已失效：${error.message}`);

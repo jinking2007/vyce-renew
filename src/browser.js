@@ -19,23 +19,34 @@ async function loadPlaywright() {
   }
 }
 
-async function launchBrowser({ headless = true } = {}) {
+async function launchBrowser({ headless = true, channel = '' } = {}) {
   const { chromium } = await loadPlaywright();
-  try {
-    return await chromium.launch({
-      headless,
-      args: ['--no-sandbox', '--disable-dev-shm-usage'],
-    });
-  } catch (error) {
-    const firstLine = String(error?.message || error).split('\n')[0];
-    const missingLibs = /shared libraries|error while loading shared libraries|cannot open shared object/i.test(
-      String(error?.message || ''),
-    );
-    const hint = missingLibs
-      ? '\n提示：当前系统缺少 Chromium 依赖库。请在有权限的 Linux 上执行 "npx playwright install --with-deps chromium"（需要 root/sudo），或改用 API 模式 "npm run renew"。'
-      : '';
-    throw new Error(`启动 Chromium 失败：${firstLine}${hint}`);
+  const args = ['--no-sandbox', '--disable-dev-shm-usage', '--disable-blink-features=AutomationControlled'];
+  // 优先用 Playwright 自带 Chromium；没安装时回退到系统 Chrome（GitHub Actions 自带）。
+  const attempts = channel ? [{ channel }] : [{}, { channel: 'chrome' }];
+  const errors = [];
+
+  for (const attempt of attempts) {
+    try {
+      return await chromium.launch({ headless, args, ...attempt });
+    } catch (error) {
+      errors.push(error);
+    }
   }
+
+  const firstLine = String(errors[0]?.message || errors[0] || 'unknown error').split('\n')[0];
+  const missingLibs = errors.some((error) =>
+    /shared libraries|error while loading shared libraries|cannot open shared object/i.test(String(error?.message || '')),
+  );
+  const hint = missingLibs
+    ? '\n提示：当前系统缺少 Chromium 依赖库。请在有权限的 Linux 上执行 "npx playwright install --with-deps chromium"（需要 root/sudo）。'
+    : '\n提示：可执行 "npx playwright install chromium" 安装浏览器，或设置 VYCE_BROWSER_CHANNEL=chrome 使用系统 Chrome。';
+  throw new Error(`启动浏览器失败：${firstLine}${hint}`);
+}
+
+function desktopUserAgent(browser) {
+  const version = String(browser?.version?.() || '131.0.0.0').split(' ')[0];
+  return `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${version} Safari/537.36`;
 }
 
 function cookieObjects(cookieString) {
@@ -55,6 +66,7 @@ async function openContext(browser, { baseUrl, statePath, cookie }) {
     baseURL: baseUrl,
     viewport: { width: 1280, height: 900 },
     locale: 'en-US',
+    userAgent: desktopUserAgent(browser),
     ...(hasState ? { storageState: statePath } : {}),
   });
 
@@ -108,6 +120,7 @@ export async function loginWithBrowser({ baseUrl, statePath, headless = false, t
     baseURL: baseUrl,
     viewport: { width: 1280, height: 900 },
     locale: 'en-US',
+    userAgent: desktopUserAgent(browser),
   });
 
   try {
@@ -161,12 +174,111 @@ export async function loginWithBrowser({ baseUrl, statePath, headless = false, t
   }
 }
 
+async function getBestcapToken(page) {
+  return page
+    .evaluate(() => {
+      const inputs = Array.from(document.querySelectorAll('input[name="bestcap-response"]'));
+      const filled = inputs.find((input) => input.value && input.value.length > 5);
+      return filled?.value || '';
+    })
+    .catch(() => '');
+}
+
+/**
+ * 真实点击 Bestcap 的 “I'm not a robot” 验证框。
+ * 只模拟鼠标点击，不伪造 token，也不破解验证码。
+ */
+async function solveBestcap(page, { logger, timeoutSeconds = 60 } = {}) {
+  const iframe = page.locator('iframe[title="Bestcap human verification"]').first();
+  const visible = await iframe
+    .waitFor({ state: 'visible', timeout: 5000 })
+    .then(() => true)
+    .catch(() => false);
+  if (!visible) {
+    return { encountered: false, solved: false };
+  }
+
+  logger?.info('检测到 Bestcap 验证框，正在模拟真实鼠标点击...');
+  const frame = page.frameLocator('iframe[title="Bestcap human verification"]');
+  const checkbox = frame.locator('#check, [role="checkbox"]').first();
+  await checkbox.waitFor({ state: 'visible', timeout: 15000 }).catch(() => {});
+
+  if (!(await getBestcapToken(page))) {
+    const box = await checkbox.boundingBox().catch(() => null);
+    if (box) {
+      const centerX = box.x + box.width / 2;
+      const centerY = box.y + box.height / 2;
+      await page.mouse.move(centerX - 70, centerY - 25, { steps: 10 }).catch(() => {});
+      await sleep(150 + Math.random() * 250);
+      await page.mouse.move(centerX, centerY, { steps: 8 }).catch(() => {});
+      await sleep(80 + Math.random() * 120);
+      await page.mouse.down();
+      await sleep(60 + Math.random() * 90);
+      await page.mouse.up();
+    } else {
+      await checkbox.click({ timeout: 15000, delay: 80 });
+    }
+  }
+
+  const deadline = Date.now() + timeoutSeconds * 1000;
+  let status = '';
+  let firstCheck = true;
+
+  while (Date.now() < deadline) {
+    if (await getBestcapToken(page)) {
+      logger?.info('Bestcap 验证通过。');
+      return { encountered: true, solved: true };
+    }
+
+    const verified = await frame
+      .getByText('Verified', { exact: true })
+      .first()
+      .isVisible()
+      .catch(() => false);
+    if (verified) {
+      await sleep(500);
+      if (await getBestcapToken(page)) {
+        logger?.info('Bestcap 验证通过。');
+        return { encountered: true, solved: true };
+      }
+    }
+
+    if (!firstCheck && !(await iframe.isVisible().catch(() => false))) {
+      // 验证成功后弹窗通常会立即关闭，交给调用方用成功 toast 判断结果。
+      logger?.info('Bestcap 弹窗已关闭，等待站点完成续期...');
+      return { encountered: true, solved: true };
+    }
+    firstCheck = false;
+
+    const statusText = ((await frame.locator('#status').textContent().catch(() => '')) || '').trim();
+    if (statusText) {
+      status = statusText;
+    }
+    if (/couldn't verify|try again|error|failed/i.test(status)) {
+      return { encountered: true, solved: false, error: status };
+    }
+
+    await sleep(500);
+  }
+
+  return { encountered: true, solved: false, error: status || '验证超时' };
+}
+
 /**
  * 使用浏览器打开 https://vyce.cloud/#/servers 并点击 Renew 按钮。
  * 站点会先弹出一个赞助页面，脚本会自动关闭它并再次点击，真正完成续期。
+ * 如果出现 Bestcap 验证框，会模拟真实鼠标点击完成验证。
  */
-export async function renewViaUi({ baseUrl, statePath, cookie = '', headless = true, logger }) {
-  const browser = await launchBrowser({ headless });
+export async function renewViaUi({
+  baseUrl,
+  statePath,
+  cookie = '',
+  headless = true,
+  timeoutSeconds = 60,
+  channel = '',
+  logger,
+}) {
+  const browser = await launchBrowser({ headless, channel });
   let context;
   try {
     context = await openContext(browser, { baseUrl, statePath, cookie });
@@ -184,7 +296,14 @@ export async function renewViaUi({ baseUrl, statePath, cookie = '', headless = t
       throw new VyceAuthError('页面要求重新登录，浏览器会话已失效。请重新运行 "npm run login"。');
     }
 
-    const summary = { clicked: 0, succeeded: 0, failed: 0, messages: [] };
+    const summary = {
+      clicked: 0,
+      succeeded: 0,
+      failed: 0,
+      messages: [],
+      captchaAttempted: false,
+      captchaSolved: false,
+    };
     const renewButtons = page.getByRole('button', { name: /^(Renew|Renew and start)$/ });
 
     for (let round = 0; round < 30; round += 1) {
@@ -222,23 +341,22 @@ export async function renewViaUi({ baseUrl, statePath, cookie = '', headless = t
           await target.click({ timeout: 15000 });
         }
 
-        // 站点新增了 Bestcap 人机验证：脚本不绕过验证码，检测到后直接提示手动处理。
-        const captchaVisible = await page
-          .locator('iframe[title="Bestcap human verification"]')
-          .first()
-          .waitFor({ state: 'visible', timeout: 2500 })
-          .then(() => true)
-          .catch(() => false);
-
-        if (captchaVisible) {
-          summary.failed += 1;
-          summary.messages.push('站点要求 CAPTCHA 验证，请手动完成验证后点击 Renew');
-          logger?.warn('检测到 Bestcap 人机验证。本工具不会绕过验证码，请在浏览器中手动勾选后再点 Renew。');
-          break;
+        // 站点新增了 Bestcap 人机验证：模拟真实鼠标点击验证框，不伪造 token。
+        const captcha = await solveBestcap(page, { logger, timeoutSeconds });
+        if (captcha.encountered) {
+          summary.captchaAttempted = true;
+          if (!captcha.solved) {
+            summary.failed += 1;
+            summary.messages.push(`CAPTCHA 自动验证未通过：${captcha.error || '未知原因'}`);
+            logger?.warn(`Bestcap 验证未通过：${captcha.error || '未知原因'}，需要手动完成。`);
+            break;
+          }
+          summary.captchaSolved = true;
+          logger?.info('验证已通过，等待站点完成续期...');
         }
 
         const toast = page.locator('[data-sonner-toast]').first();
-        await toast.waitFor({ state: 'visible', timeout: 20000 }).catch(() => {});
+        await toast.waitFor({ state: 'visible', timeout: 25000 }).catch(() => {});
         const toastText = ((await toast.textContent().catch(() => '')) || '').trim();
 
         if (/Renewed/i.test(toastText)) {

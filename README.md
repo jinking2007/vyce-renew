@@ -5,7 +5,8 @@
 - 支持 **API 模式**（默认，稳定、适合定时任务）和 **浏览器点击模式**（真实打开页面点 Renew）
 - 每 24 小时自动检查一次；站点有 24 小时冷却，脚本只会在允许续期时动手，不会重复续期
 - 支持 GitHub Actions（免服务器）、Docker、systemd、cron、常驻进程
-- 支持 Telegram 通知：续期成功、部分失败、登录失效时推送到手机；需要 CAPTCHA 时推送“去续期”按钮
+- 支持 Telegram 通知：续期成功、部分失败、登录失效时推送到手机；CAPTCHA 自动点击失败时可推送“去续期”按钮
+- 站点新增 Bestcap 验证时，自动用真实浏览器点击验证框后完成续期
 - 内置重试、冷却判断、续期结果校验和清晰的中文日志
 - 单元测试 + 本地 mock 集成测试
 
@@ -13,18 +14,19 @@
 > 本地运行 `npm run login`，在弹出的浏览器里用 GitHub 登录；脚本会把会话 Cookie 保存到 `.auth/state.json`，之后每次续期都复用它。
 > Cookie 过期（日志提示 401）时，重新执行一次 `npm run login` 即可。
 
-## ⚠️ 站点新增 CAPTCHA（重要）
+## ⚠️ 站点新增 CAPTCHA
 
 vyce.cloud 在 2026 年 10 月给续期加了 **Bestcap 人机验证**：`POST /api/servers/{id}/renew` 现在必须携带 `captchaResponse`，而该 token 由浏览器里的 “I'm not a robot” 组件生成。
 
-这意味着**纯 API 已经无法无人值守地完成续期**。本工具的行为是：
+本工具的处理流程：
 
-1. 仍然先尝试自动续期；
-2. 如果站点返回 CAPTCHA 错误，会在 Telegram 发一条 **“需要手动验证”** 消息，并附带 **“去完成验证并续期”** 按钮；
-3. 你点按钮 → 在打开的页面点 `Renew` → 勾选验证框（约 10 秒）即可；
-4. 续期成功后，脚本下次运行会看到新的到期时间，继续正常监控。
+1. 先用 API 正常尝试续期（如果后端仍放行，继续全自动）；
+2. 如果被 CAPTCHA 拦下，自动启动浏览器（GitHub Actions 用系统自带 Chrome）打开续期弹窗；
+3. 模拟真实鼠标移动和点击，勾选 Bestcap 验证框；
+4. 验证通过后，站点会自动完成续期，脚本等待成功提示并发送 Telegram 通知；
+5. 如果点击后仍未通过（例如升级成图片题、被风控），才发送 **“需要手动验证”** 消息，附带 **“去完成验证并续期”** 按钮。
 
-本工具**不会绕过验证码**（破解 PoW/指纹或接入打码平台），因为这类做法不稳定，也可能违反站点规则。如果以后站点取消验证，脚本会自动恢复全自动续期。
+这里只模拟真实点击，不伪造 token、不破解验证码；如果站点以后升级验证方式，可能会自动回退到手动提醒。
 
 ## 工作原理
 
@@ -166,6 +168,9 @@ npm run renew:ui -- --headed   # 显示浏览器窗口（默认无头）
 | `VYCE_INTERVAL_HOURS` | `24` | daemon 检查间隔（小时） |
 | `VYCE_DRY_RUN` | `false` | 试运行，只打印计划 |
 | `VYCE_HEADLESS` | `true` | 浏览器模式是否无头；首次 `login` 始终需要可见窗口 |
+| `VYCE_CAPTCHA_BROWSER` | `true` | API 被 CAPTCHA 拦下时，是否自动用浏览器点击验证框 |
+| `VYCE_CAPTCHA_TIMEOUT_SECONDS` | `60` | 等待验证框通过的秒数 |
+| `VYCE_BROWSER_CHANNEL` | 空 | 浏览器通道，如 `chrome`；留空优先自带 Chromium，失败回退系统 Chrome |
 | `VYCE_LOGIN_TIMEOUT_SECONDS` | `600` | 等待 GitHub 登录的超时时间 |
 | `VYCE_TIMEOUT_MS` | `20000` | 单个 HTTP 请求超时 |
 | `TELEGRAM_BOT_TOKEN` | 空 | Telegram 机器人 Token（未填写则不通知） |
@@ -245,7 +250,7 @@ npm run renew:ui -- --headed      # 观察整个点击过程
 
 在无头 Linux 服务器上如提示缺少系统库，可执行 `npx playwright install --with-deps chromium`（需要 root）。
 
-> 注意：站点新增的 Bestcap CAPTCHA 需要真实点击验证框，浏览器模式检测到验证框后会停止并提示手动完成，不会自动破解验证码。
+> 站点新增的 Bestcap CAPTCHA 会在浏览器模式中自动模拟鼠标点击；如果验证升级为图片题或被风控，会停止并提示手动完成。
 
 ## 文件结构
 

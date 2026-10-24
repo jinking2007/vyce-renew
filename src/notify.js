@@ -110,10 +110,14 @@ export function buildUiMessage(summary, { baseUrl = 'https://vyce.cloud', now = 
   const messages = Array.isArray(summary?.messages) ? summary.messages : [];
 
   const lines = [
-    `<b>${failed > 0 ? '⚠️' : '✅'} vyce.cloud 浏览器续期</b>`,
+    `<b>${failed > 0 ? '⚠️' : '✅'} vyce.cloud ${summary?.captchaSolved ? '验证并续期' : '浏览器续期'}</b>`,
     `时间：${formatTimestamp(now)}`,
     `点击次数：${clicked}，成功 ${succeeded} 台，失败 ${failed} 台`,
   ];
+
+  if (summary?.captchaSolved) {
+    lines.push('CAPTCHA：已通过真实鼠标点击完成验证');
+  }
 
   for (const message of messages.slice(0, 10)) {
     lines.push(`• ${escapeHtml(message)}`);

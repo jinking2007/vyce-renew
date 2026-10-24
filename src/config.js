@@ -71,5 +71,8 @@ export function loadConfig(env = process.env) {
     telegramApiBase: readString(env, 'TELEGRAM_API_BASE', 'https://api.telegram.org').replace(/\/+$/, ''),
     telegramNotify,
     telegramNotifyAlways,
+    captchaBrowser: readBoolean(env, 'VYCE_CAPTCHA_BROWSER', true),
+    captchaTimeoutSeconds: readNumber(env, 'VYCE_CAPTCHA_TIMEOUT_SECONDS', 60, { min: 10, max: 300 }),
+    browserChannel: readString(env, 'VYCE_BROWSER_CHANNEL'),
   };
 }
