@@ -184,14 +184,23 @@ async function getBestcapToken(page) {
     .catch(() => '');
 }
 
+async function captchaModalVisible(page, timeout = 2000) {
+  return page
+    .getByText(/Complete the CAPTCHA verification/i)
+    .first()
+    .waitFor({ state: 'visible', timeout })
+    .then(() => true)
+    .catch(() => false);
+}
+
 /**
  * 真实点击 Bestcap 的 “I'm not a robot” 验证框。
  * 只模拟鼠标点击，不伪造 token，也不破解验证码。
  */
-async function solveBestcap(page, { logger, timeoutSeconds = 60 } = {}) {
+async function solveBestcap(page, { logger, timeoutSeconds = 60, detectTimeoutMs = 5000 } = {}) {
   const iframe = page.locator('iframe[title="Bestcap human verification"]').first();
   const visible = await iframe
-    .waitFor({ state: 'visible', timeout: 5000 })
+    .waitFor({ state: 'visible', timeout: detectTimeoutMs })
     .then(() => true)
     .catch(() => false);
   if (!visible) {
@@ -335,14 +344,32 @@ export async function renewViaUi({
         const popup = await popupPromise;
 
         if (popup) {
-          logger?.info('站点打开了一个赞助页面，正在关闭并按站点要求再次点击 Renew...');
+          logger?.info('站点打开了一个赞助页面，正在关闭...');
           await popup.close().catch(() => {});
           await page.bringToFront();
-          await target.click({ timeout: 15000 });
+        }
+
+        // 新流程：第一次点击就会弹出 CAPTCHA 弹窗；旧流程需要第二次点击。
+        let modalVisible = await captchaModalVisible(page, popup ? 5000 : 2000);
+
+        if (!modalVisible) {
+          logger?.info('未检测到验证弹窗，按旧流程再次点击 Renew...');
+          try {
+            await target.click({ timeout: 10000 });
+          } catch (error) {
+            logger?.warn(
+              `再次点击 Renew 未成功（可能弹窗已打开）：${String(error?.message || error).split('\n')[0]}`,
+            );
+          }
+          modalVisible = await captchaModalVisible(page, 5000);
         }
 
         // 站点新增了 Bestcap 人机验证：模拟真实鼠标点击验证框，不伪造 token。
-        const captcha = await solveBestcap(page, { logger, timeoutSeconds });
+        const captcha = await solveBestcap(page, {
+          logger,
+          timeoutSeconds,
+          detectTimeoutMs: modalVisible ? 15000 : 5000,
+        });
         if (captcha.encountered) {
           summary.captchaAttempted = true;
           if (!captcha.solved) {
