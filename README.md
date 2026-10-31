@@ -275,6 +275,59 @@ GitHub Actions 需要在仓库 Secret 中添加：
 > 代理密码等同于账号凭据，请只放在 Secret / `.env` 中，不要提交到 Git。
 > 如果加了住宅代理仍然失败，说明 Bestcap 还会检测自动化环境或账号行为，代理本身无法解决。
 
+### sing-box + VLESS 怎么接
+
+`vless://` 是节点链接，不是 HTTP 代理，程序不能直接使用。需要让 sing-box 提供一个 **mixed inbound**（同时支持 HTTP 和 SOCKS），然后把地址填给程序。
+
+在 sing-box 配置里加入：
+
+```json
+{
+  "inbounds": [
+    {
+      "type": "mixed",
+      "tag": "mixed-in",
+      "listen": "127.0.0.1",
+      "listen_port": 7890,
+      "users": [
+        { "username": "vyce", "password": "换成强密码" }
+      ]
+    }
+  ]
+}
+```
+
+保留你原来的 VLESS outbound 和 route（确保最终出口是 VLESS 节点），然后：
+
+```dotenv
+VYCE_PROXY_SERVER=http://127.0.0.1:7890
+VYCE_PROXY_USERNAME=vyce
+VYCE_PROXY_PASSWORD=换成强密码
+```
+
+推荐 HTTP 端口（`mixed` 同时支持），因为 API 和浏览器都会走它；纯 SOCKS 端口 API 会直连。
+
+**两种部署方式：**
+
+1. **机器人跑在和 sing-box 同一台机器上（推荐）**
+   - 最安全、延迟最低；
+   - 直接 `npm run daemon` 或 cron，不需要把代理暴露到公网；
+   - 出口 IP 就是 VLESS 节点的 IP。
+
+2. **继续用 GitHub Actions**
+   - sing-box 必须运行在**有公网 IP 的服务器**上，`listen` 改成 `0.0.0.0`；
+   - 把 `http://公网IP:7890` 和用户名密码存到 Secret；
+   - **务必**加防火墙/TLS/强密码，不要把无认证代理暴露公网（会被扫描滥用）；
+   - 出口 IP 是 VLESS 节点 IP，住宅/固定 ISP 节点成功率更高，机房节点可能仍被 Bestcap 风控。
+
+GitHub Actions 的连接路径是：
+
+```text
+GitHub Runner → 公网 sing-box mixed inbound → VLESS 节点 → vyce.cloud
+```
+
+所以真正对 vyce.cloud 展示的 IP 是 VLESS 节点的出口 IP，固定且不轮换才有意义。
+
 ## 浏览器点击模式
 
 ```bash

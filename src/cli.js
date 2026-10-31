@@ -4,7 +4,7 @@ import { parseArgs } from 'node:util';
 import { loadConfig } from './config.js';
 import { createLogger, describeError } from './logger.js';
 import { HOUR_MS, computeRenewalDecision, formatDuration, formatTimestamp, selectServers } from './decisions.js';
-import { VyceAuthError, VyceClient, resolveCookieHeader } from './vyce-client.js';
+import { VyceAuthError, VyceClient, buildProxyUrl, resolveCookieHeader } from './vyce-client.js';
 import { runRenewal } from './renew.js';
 import { loginWithBrowser, renewViaUi } from './browser.js';
 import { notifyApiResult, notifyFailure, notifyTest, notifyUiResult } from './notify.js';
@@ -46,6 +46,8 @@ function proxyFromConfig(config) {
   if (!config.proxyServer) {
     return null;
   }
+  // 提前校验，避免 Playwright/undici 报难以理解的错误。
+  buildProxyUrl({ server: config.proxyServer });
   return {
     server: config.proxyServer,
     username: config.proxyUsername,

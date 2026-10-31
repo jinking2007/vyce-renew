@@ -20,6 +20,13 @@ test('buildProxyUrl 支持 socks5', () => {
   assert.equal(new URL(value).protocol, 'socks5:');
 });
 
+test('buildProxyUrl 对 VLESS 链接给出 sing-box 提示', () => {
+  assert.throws(
+    () => buildProxyUrl({ server: 'vless://uuid@example.com:443?type=ws' }),
+    /sing-box/,
+  );
+});
+
 test('buildProxyUrl 对非法地址抛出错误', () => {
   assert.throws(() => buildProxyUrl({ server: 'not a url' }), /格式无效/);
   assert.throws(() => buildProxyUrl({ server: 'ftp://127.0.0.1:21' }), /不支持的代理协议/);

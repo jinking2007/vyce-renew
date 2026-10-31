@@ -61,9 +61,15 @@ export function buildProxyUrl(proxy) {
   if (!proxy?.server) {
     return '';
   }
+  const raw = String(proxy.server).trim();
+  if (/^(vless|vmess|trojan|ss|hysteria2?|tuic):\/\//i.test(raw)) {
+    throw new Error(
+      'VLESS/VMess/Trojan/SS 等节点链接不能直接作为 HTTP 代理。请先用 sing-box 提供 mixed/HTTP inbound（例如 127.0.0.1:7890），再把 VYCE_PROXY_SERVER 设为 http://127.0.0.1:7890。',
+    );
+  }
   let parsed;
   try {
-    parsed = new URL(String(proxy.server).trim());
+    parsed = new URL(raw);
   } catch {
     throw new Error(`VYCE_PROXY_SERVER 格式无效：${proxy.server}`);
   }
