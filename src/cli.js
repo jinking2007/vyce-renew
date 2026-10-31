@@ -42,9 +42,20 @@ function describeUser(user) {
   return `${user.login || user.name || user.id}（GitHub ID: ${user.githubId ?? user.id}）`;
 }
 
+function proxyFromConfig(config) {
+  if (!config.proxyServer) {
+    return null;
+  }
+  return {
+    server: config.proxyServer,
+    username: config.proxyUsername,
+    password: config.proxyPassword,
+  };
+}
+
 async function commandLogin(config, logger, values) {
   if (config.cookie) {
-    const client = new VyceClient({ ...config, logger });
+    const client = new VyceClient({ ...config, proxy: proxyFromConfig(config), logger });
     const user = await client.getMe();
     logger.info(`VYCE_COOKIE 有效，已登录：${describeUser(user)}`);
     return;
@@ -55,6 +66,7 @@ async function commandLogin(config, logger, values) {
     statePath: config.statePath,
     headless: Boolean(values.headless),
     timeoutSeconds: config.loginTimeoutSeconds,
+    proxy: proxyFromConfig(config),
     logger,
   });
 
@@ -80,6 +92,7 @@ async function tryBrowserCaptcha({ config, logger, summary, headless }) {
       timeoutSeconds: config.captchaTimeoutSeconds,
       channel: config.browserChannel,
       headful: config.captchaHeadful,
+      proxy: proxyFromConfig(config),
       logger,
     });
     summary.browserFallback = uiSummary;
@@ -111,6 +124,7 @@ async function commandRenew(config, logger, values) {
         timeoutSeconds: config.captchaTimeoutSeconds,
         channel: config.browserChannel,
         headful: config.captchaHeadful,
+        proxy: proxyFromConfig(config),
         logger,
       });
     } catch (error) {
@@ -128,7 +142,7 @@ async function commandRenew(config, logger, values) {
     return;
   }
 
-  const client = new VyceClient({ ...config, logger });
+  const client = new VyceClient({ ...config, proxy: proxyFromConfig(config), logger });
   let summary;
   try {
     summary = await runRenewal({
@@ -175,7 +189,7 @@ async function commandNotifyTest(config, logger, values) {
 }
 
 async function commandStatus(config, logger, values) {
-  const client = new VyceClient({ ...config, logger });
+  const client = new VyceClient({ ...config, proxy: proxyFromConfig(config), logger });
   const user = await client.getMe();
   const allServers = await client.listServers();
   const servers = selectServers(allServers, config.serverSelectors);
@@ -230,7 +244,7 @@ async function commandExportCookie(config, logger) {
     );
   }
 
-  const client = new VyceClient({ ...config, cookie, logger });
+  const client = new VyceClient({ ...config, cookie, proxy: proxyFromConfig(config), logger });
   const user = await client.getMe();
   process.stderr.write(`[export-cookie] Cookie 有效，账号：${describeUser(user)}\n`);
   process.stderr.write('[export-cookie] 把下一行完整内容保存为 GitHub Actions Secret：VYCE_COOKIE\n');
@@ -245,7 +259,7 @@ async function commandDaemon(config, logger, values) {
     throw new Error(`--interval 的值无效：${values.interval}`);
   }
   const intervalMs = intervalHours * HOUR_MS;
-  const client = new VyceClient({ ...config, logger });
+  const client = new VyceClient({ ...config, proxy: proxyFromConfig(config), logger });
   const notifyConfig = values['no-notify'] ? { ...config, telegramNotify: false } : config;
   const headless = values.headed ? false : config.headless;
 

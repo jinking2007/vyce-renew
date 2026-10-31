@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import process from 'node:process';
+import { ProxyAgent, fetch as undiciFetch } from 'undici';
 import { cookieHeaderFromState } from './cookies.js';
 
 const DEFAULT_USER_AGENT =
@@ -56,14 +57,57 @@ export function resolveCookieHeader({ cookie = '', statePath = '' } = {}) {
   return cookieHeaderFromState(state);
 }
 
+export function buildProxyUrl(proxy) {
+  if (!proxy?.server) {
+    return '';
+  }
+  let parsed;
+  try {
+    parsed = new URL(String(proxy.server).trim());
+  } catch {
+    throw new Error(`VYCE_PROXY_SERVER 格式无效：${proxy.server}`);
+  }
+  if (!['http:', 'https:', 'socks:', 'socks5:', 'socks5h:'].includes(parsed.protocol)) {
+    throw new Error(`不支持的代理协议：${parsed.protocol}`);
+  }
+  if (proxy.username) {
+    parsed.username = proxy.username;
+  }
+  if (proxy.password) {
+    parsed.password = proxy.password;
+  }
+  return parsed.toString();
+}
+
+export function createProxyDispatcher(proxy, logger) {
+  if (!proxy?.server) {
+    return undefined;
+  }
+
+  const raw = String(proxy.server).trim();
+  if (/^socks/i.test(raw)) {
+    logger?.warn('API 请求暂不支持 SOCKS 代理，将直连；浏览器仍可使用该 SOCKS 节点。建议提供 HTTP 代理端口。');
+    return undefined;
+  }
+
+  const url = buildProxyUrl(proxy);
+  try {
+    logger?.info(`API 使用代理：${new URL(url).host}`);
+    return new ProxyAgent(url);
+  } catch (error) {
+    throw new Error(`创建代理失败：${error?.message || error}`);
+  }
+}
+
 export class VyceClient {
-  constructor({ baseUrl = 'https://vyce.cloud', cookie = '', statePath = '', timeoutMs = 20000, retries = 2, logger } = {}) {
+  constructor({ baseUrl = 'https://vyce.cloud', cookie = '', statePath = '', timeoutMs = 20000, retries = 2, proxy, logger } = {}) {
     this.baseUrl = baseUrl.replace(/\/+$/, '');
     this.cookie = cookie;
     this.statePath = statePath;
     this.timeoutMs = timeoutMs;
     this.retries = retries;
     this.logger = logger;
+    this.dispatcher = createProxyDispatcher(proxy, logger);
   }
 
   get hasCredentials() {
@@ -96,11 +140,12 @@ export class VyceClient {
     for (let attempt = 0; attempt <= this.retries; attempt += 1) {
       let response;
       try {
-        response = await fetch(url, {
+        response = await undiciFetch(url, {
           method,
           headers,
           body: body === undefined ? undefined : JSON.stringify(body),
           redirect: 'manual',
+          dispatcher: this.dispatcher,
           signal: AbortSignal.timeout(this.timeoutMs),
         });
       } catch (error) {

@@ -25,6 +25,9 @@ test('loadConfig 提供合理默认值', () => {
   assert.equal(config.captchaHeadful, false);
   assert.equal(config.captchaTimeoutSeconds, 60);
   assert.equal(config.browserChannel, '');
+  assert.equal(config.proxyServer, '');
+  assert.equal(config.proxyUsername, '');
+  assert.equal(config.proxyPassword, '');
 });
 
 test('loadConfig 读取环境变量并去掉末尾斜杠', () => {
@@ -45,6 +48,9 @@ test('loadConfig 读取环境变量并去掉末尾斜杠', () => {
     VYCE_CAPTCHA_HEADFUL: 'true',
     VYCE_CAPTCHA_TIMEOUT_SECONDS: '120',
     VYCE_BROWSER_CHANNEL: 'chrome',
+    VYCE_PROXY_SERVER: 'http://127.0.0.1:7890',
+    VYCE_PROXY_USERNAME: 'user',
+    VYCE_PROXY_PASSWORD: 'pass',
   });
   assert.equal(config.baseUrl, 'https://example.test');
   assert.equal(config.cookie, 'a=1');
@@ -63,6 +69,9 @@ test('loadConfig 读取环境变量并去掉末尾斜杠', () => {
   assert.equal(config.captchaHeadful, true);
   assert.equal(config.captchaTimeoutSeconds, 120);
   assert.equal(config.browserChannel, 'chrome');
+  assert.equal(config.proxyServer, 'http://127.0.0.1:7890');
+  assert.equal(config.proxyUsername, 'user');
+  assert.equal(config.proxyPassword, 'pass');
 });
 
 test('TELEGRAM_NOTIFY=false 关闭通知，always 作为每日心跳', () => {

@@ -67,7 +67,7 @@ async function loadPlaywright() {
   }
 }
 
-async function launchBrowser({ headless = true, channel = '' } = {}) {
+async function launchBrowser({ headless = true, channel = '', proxy = null } = {}) {
   const { chromium } = await loadPlaywright();
   const args = [
     '--no-sandbox',
@@ -75,13 +75,26 @@ async function launchBrowser({ headless = true, channel = '' } = {}) {
     '--disable-gpu',
     '--disable-blink-features=AutomationControlled',
   ];
+  const proxyOption =
+    proxy?.server
+      ? {
+          server: proxy.server,
+          ...(proxy.username ? { username: proxy.username } : {}),
+          ...(proxy.password ? { password: proxy.password } : {}),
+        }
+      : null;
   // 优先用 Playwright 自带 Chromium；没安装时回退到系统 Chrome（GitHub Actions 自带）。
   const attempts = channel ? [{ channel }] : [{}, { channel: 'chrome' }];
   const errors = [];
 
   for (const attempt of attempts) {
     try {
-      return await chromium.launch({ headless, args, ...attempt });
+      return await chromium.launch({
+        headless,
+        args,
+        ...(proxyOption ? { proxy: proxyOption } : {}),
+        ...attempt,
+      });
     } catch (error) {
       errors.push(error);
     }
@@ -155,8 +168,15 @@ async function saveStorageState(context, statePath, logger) {
 /**
  * 打开浏览器让用户用 GitHub 登录一次，登录成功后把 Cookie 保存为 storageState。
  */
-export async function loginWithBrowser({ baseUrl, statePath, headless = false, timeoutSeconds = 600, logger }) {
-  const browser = await launchBrowser({ headless });
+export async function loginWithBrowser({
+  baseUrl,
+  statePath,
+  headless = false,
+  timeoutSeconds = 600,
+  proxy = null,
+  logger,
+}) {
+  const browser = await launchBrowser({ headless, proxy });
   const context = await browser.newContext({
     baseURL: baseUrl,
     viewport: { width: 1280, height: 900 },
@@ -353,6 +373,7 @@ export async function renewViaUi({
   timeoutSeconds = 60,
   channel = '',
   headful = false,
+  proxy = null,
   logger,
 }) {
   let xvfb = null;
@@ -361,6 +382,9 @@ export async function renewViaUi({
   let effectiveHeadless = headless;
 
   try {
+    if (proxy?.server) {
+      logger?.info(`浏览器使用代理：${proxy.server}`);
+    }
     if (headful) {
       xvfb = await ensureXvfb();
       if (xvfb || process.platform !== 'linux') {
@@ -369,7 +393,7 @@ export async function renewViaUi({
       }
     }
 
-    browser = await launchBrowser({ headless: effectiveHeadless, channel });
+    browser = await launchBrowser({ headless: effectiveHeadless, channel, proxy });
     context = await openContext(browser, { baseUrl, statePath, cookie });
     const page = await context.newPage();
 

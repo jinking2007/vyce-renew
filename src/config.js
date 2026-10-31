@@ -75,5 +75,8 @@ export function loadConfig(env = process.env) {
     captchaHeadful: readBoolean(env, 'VYCE_CAPTCHA_HEADFUL', env.CI === 'true' || env.GITHUB_ACTIONS === 'true'),
     captchaTimeoutSeconds: readNumber(env, 'VYCE_CAPTCHA_TIMEOUT_SECONDS', 60, { min: 10, max: 300 }),
     browserChannel: readString(env, 'VYCE_BROWSER_CHANNEL'),
+    proxyServer: readString(env, 'VYCE_PROXY_SERVER'),
+    proxyUsername: readString(env, 'VYCE_PROXY_USERNAME'),
+    proxyPassword: readString(env, 'VYCE_PROXY_PASSWORD'),
   };
 }

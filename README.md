@@ -7,6 +7,7 @@
 - 支持 GitHub Actions（免服务器）、Docker、systemd、cron、常驻进程
 - 支持 Telegram 通知：续期成功、部分失败、登录失效时推送到手机；CAPTCHA 自动点击失败时可推送“去续期”按钮
 - 站点新增 Bestcap 验证时，自动用真实浏览器点击验证框后完成续期
+- 支持 HTTP(S)/SOCKS 代理，可让 API 和浏览器统一走固定出口 IP
 - 内置重试、冷却判断、续期结果校验和清晰的中文日志
 - 单元测试 + 本地 mock 集成测试
 
@@ -172,6 +173,9 @@ npm run renew:ui -- --headed   # 显示浏览器窗口（默认无头）
 | `VYCE_CAPTCHA_HEADFUL` | CI 中为 `true` | 用 Xvfb 启动有头 Chrome（更接近真人）；本地默认无头 |
 | `VYCE_CAPTCHA_TIMEOUT_SECONDS` | `60` | 等待验证框通过的秒数 |
 | `VYCE_BROWSER_CHANNEL` | 空 | 浏览器通道，如 `chrome`；留空优先自带 Chromium，失败回退系统 Chrome |
+| `VYCE_PROXY_SERVER` | 空 | 代理地址，如 `http://127.0.0.1:7890` 或 `socks5://...` |
+| `VYCE_PROXY_USERNAME` | 空 | 代理用户名（可选） |
+| `VYCE_PROXY_PASSWORD` | 空 | 代理密码（可选） |
 | `VYCE_LOGIN_TIMEOUT_SECONDS` | `600` | 等待 GitHub 登录的超时时间 |
 | `VYCE_TIMEOUT_MS` | `20000` | 单个 HTTP 请求超时 |
 | `TELEGRAM_BOT_TOKEN` | 空 | Telegram 机器人 Token（未填写则不通知） |
@@ -234,6 +238,42 @@ npm run notify-test
 - 通知发送失败只记录警告，不会影响续期本身。
 
 > 如果运行成功但没收到消息，先看日志里的“本次结果”：如果显示 `续期 0 台，跳过 1 台`，说明服务器还在冷却期，默认不发通知，这是正常的。想每天都收到一条确认，把 `TELEGRAM_NOTIFY` 设为 `always`。
+
+## 固定 IP / 代理
+
+如果你的节点提供固定出口 IP，把它加进来**通常有助于通过 Bestcap 风控**，因为验证 token 与续期请求会来自同一个稳定 IP。注意：
+
+- **住宅 / 静态 ISP 代理**成功率最高；普通机房代理（VPS）可能仍然被判定为风险 IP；
+- 必须是**固定或粘性出口**，不要在验证过程中切换 IP；
+- 推荐使用 HTTP(S) 代理端口（Clash / V2Ray 的 mixed 端口即可）；SOCKS5 只有浏览器支持，API 会直连并给出警告；
+- 浏览器（验证框 + 站点续期请求）和 Node API 都会走同一个代理。
+
+配置方式：
+
+```dotenv
+VYCE_PROXY_SERVER=http://127.0.0.1:7890
+VYCE_PROXY_USERNAME=可选
+VYCE_PROXY_PASSWORD=可选
+```
+
+本地先用 `npm run status` 验证代理是否生效（日志会显示“API 使用代理”）。
+
+GitHub Actions 需要在仓库 Secret 中添加：
+
+- `VYCE_PROXY_SERVER`
+- `VYCE_PROXY_USERNAME`（可选）
+- `VYCE_PROXY_PASSWORD`（可选）
+
+并确保工作流的 `env:` 中包含这三项（`deploy/renew.workflow.yml` 模板已包含）。如果你用的是之前版本的工作流文件，请把这三行补到 `Renew servers` 步骤的 `env:` 下：
+
+```yaml
+          VYCE_PROXY_SERVER: ${{ secrets.VYCE_PROXY_SERVER }}
+          VYCE_PROXY_USERNAME: ${{ secrets.VYCE_PROXY_USERNAME }}
+          VYCE_PROXY_PASSWORD: ${{ secrets.VYCE_PROXY_PASSWORD }}
+```
+
+> 代理密码等同于账号凭据，请只放在 Secret / `.env` 中，不要提交到 Git。
+> 如果加了住宅代理仍然失败，说明 Bestcap 还会检测自动化环境或账号行为，代理本身无法解决。
 
 ## 浏览器点击模式
 

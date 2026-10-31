@@ -42,6 +42,9 @@ jobs:
         run: npm run renew
         env:
           VYCE_COOKIE: ${{ secrets.VYCE_COOKIE }}
+          VYCE_PROXY_SERVER: ${{ secrets.VYCE_PROXY_SERVER }}
+          VYCE_PROXY_USERNAME: ${{ secrets.VYCE_PROXY_USERNAME }}
+          VYCE_PROXY_PASSWORD: ${{ secrets.VYCE_PROXY_PASSWORD }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           TELEGRAM_NOTIFY: ${{ secrets.TELEGRAM_NOTIFY }}
