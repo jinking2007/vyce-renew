@@ -99,6 +99,7 @@ async function tryBrowserCaptcha({ config, logger, summary, headless }) {
       channel: config.browserChannel,
       headful: config.captchaHeadful,
       proxy: proxyFromConfig(config),
+      profile: config.browserProfile,
       logger,
     });
     summary.browserFallback = uiSummary;
@@ -131,6 +132,7 @@ async function commandRenew(config, logger, values) {
         channel: config.browserChannel,
         headful: config.captchaHeadful,
         proxy: proxyFromConfig(config),
+        profile: config.browserProfile,
         logger,
       });
     } catch (error) {
@@ -384,6 +386,7 @@ async function main() {
     return;
   }
   config.resolvedProxy = proxyRuntime.proxy;
+  config.browserProfile = proxyRuntime.profile;
 
   try {
     switch (command) {

@@ -126,12 +126,13 @@ function cookieObjects(cookieString) {
   }));
 }
 
-async function openContext(browser, { baseUrl, statePath, cookie }) {
+async function openContext(browser, { baseUrl, statePath, cookie, profile = null }) {
   const hasState = Boolean(statePath) && fs.existsSync(statePath);
   const context = await browser.newContext({
     baseURL: baseUrl,
     viewport: { width: 1280, height: 900 },
-    locale: 'en-US',
+    locale: profile?.locale || 'en-US',
+    ...(profile?.timezoneId ? { timezoneId: profile.timezoneId } : {}),
     userAgent: desktopUserAgent(browser),
     ...(hasState ? { storageState: statePath } : {}),
   });
@@ -393,6 +394,7 @@ export async function renewViaUi({
   channel = '',
   headful = false,
   proxy = null,
+  profile = null,
   logger,
 }) {
   let xvfb = null;
@@ -413,7 +415,7 @@ export async function renewViaUi({
     }
 
     browser = await launchBrowser({ headless: effectiveHeadless, channel, proxy });
-    context = await openContext(browser, { baseUrl, statePath, cookie });
+    context = await openContext(browser, { baseUrl, statePath, cookie, profile });
     const page = await context.newPage();
 
     page.on('response', async (response) => {
@@ -436,6 +438,7 @@ export async function renewViaUi({
         platform: navigator.platform,
         languages: navigator.languages,
         hardwareConcurrency: navigator.hardwareConcurrency,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       }))
       .catch(() => null);
     if (fingerprint) {
