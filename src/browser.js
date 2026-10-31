@@ -1,12 +1,60 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawn } from 'node:child_process';
 import { parseCookieString } from './cookies.js';
 import { VyceAuthError, resolveCookieHeader } from './vyce-client.js';
 
-const AD_HOSTS = /(^|\.)(uplcm\.com|n6wxm\.com|nap5k\.com)$/i;
-
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function ensureXvfb() {
+  if (process.platform !== 'linux' || process.env.DISPLAY) {
+    return null;
+  }
+  const display = ':99';
+  const child = spawn('Xvfb', [display, '-screen', '0', '1280x900x24', '-nolisten', 'tcp'], {
+    stdio: 'ignore',
+  });
+
+  const started = await new Promise((resolve) => {
+    let settled = false;
+    const finish = (value) => {
+      if (!settled) {
+        settled = true;
+        resolve(value);
+      }
+    };
+    child.once('error', () => finish(false));
+    child.once('exit', () => finish(false));
+    setTimeout(() => finish(true), 1200);
+  });
+
+  if (!started) {
+    try {
+      child.kill('SIGTERM');
+    } catch {
+      // ignore
+    }
+    return null;
+  }
+
+  process.env.DISPLAY = display;
+  return child;
+}
+
+function stopXvfb(child) {
+  if (!child) {
+    return;
+  }
+  try {
+    child.kill('SIGTERM');
+  } catch {
+    // ignore
+  }
+  if (process.env.DISPLAY === ':99') {
+    delete process.env.DISPLAY;
+  }
 }
 
 async function loadPlaywright() {
@@ -21,7 +69,12 @@ async function loadPlaywright() {
 
 async function launchBrowser({ headless = true, channel = '' } = {}) {
   const { chromium } = await loadPlaywright();
-  const args = ['--no-sandbox', '--disable-dev-shm-usage', '--disable-blink-features=AutomationControlled'];
+  const args = [
+    '--no-sandbox',
+    '--disable-dev-shm-usage',
+    '--disable-gpu',
+    '--disable-blink-features=AutomationControlled',
+  ];
   // 优先用 Playwright 自带 Chromium；没安装时回退到系统 Chrome（GitHub Actions 自带）。
   const attempts = channel ? [{ channel }] : [{}, { channel: 'chrome' }];
   const errors = [];
@@ -80,18 +133,6 @@ async function openContext(browser, { baseUrl, statePath, cookie }) {
     }
     await context.addCookies(cookies);
   }
-
-  await context.route('**/*', (route) => {
-    try {
-      const host = new URL(route.request().url()).hostname;
-      if (AD_HOSTS.test(host)) {
-        return route.abort();
-      }
-    } catch {
-      // 忽略无法解析的 URL
-    }
-    return route.continue();
-  });
 
   return context;
 }
@@ -193,11 +234,30 @@ async function captchaModalVisible(page, timeout = 2000) {
     .catch(() => false);
 }
 
+function summarizeToken(token) {
+  if (!token) {
+    return { length: 0 };
+  }
+  const parts = token.split('.');
+  if (parts.length === 3) {
+    try {
+      const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+      return { length: token.length, jwtKeys: Object.keys(payload) };
+    } catch {
+      // ignore
+    }
+  }
+  return { length: token.length };
+}
+
 /**
  * 真实点击 Bestcap 的 “I'm not a robot” 验证框。
  * 只模拟鼠标点击，不伪造 token，也不破解验证码。
  */
-async function solveBestcap(page, { logger, timeoutSeconds = 60, detectTimeoutMs = 5000 } = {}) {
+async function solveBestcap(
+  page,
+  { logger, timeoutSeconds = 60, detectTimeoutMs = 5000, humanDelayMs = 2500 } = {},
+) {
   const iframe = page.locator('iframe[title="Bestcap human verification"]').first();
   const visible = await iframe
     .waitFor({ state: 'visible', timeout: detectTimeoutMs })
@@ -213,16 +273,21 @@ async function solveBestcap(page, { logger, timeoutSeconds = 60, detectTimeoutMs
   await checkbox.waitFor({ state: 'visible', timeout: 15000 }).catch(() => {});
 
   if (!(await getBestcapToken(page))) {
+    // 真人通常会先看一眼再点，等待一段时间能降低“点击过快”的风控概率。
+    const pause = humanDelayMs + Math.random() * 1500;
+    logger?.info(`等待 ${Math.round(pause)}ms 后点击验证框（模拟真人）...`);
+    await sleep(pause);
+
     const box = await checkbox.boundingBox().catch(() => null);
     if (box) {
       const centerX = box.x + box.width / 2;
       const centerY = box.y + box.height / 2;
-      await page.mouse.move(centerX - 70, centerY - 25, { steps: 10 }).catch(() => {});
-      await sleep(150 + Math.random() * 250);
-      await page.mouse.move(centerX, centerY, { steps: 8 }).catch(() => {});
-      await sleep(80 + Math.random() * 120);
+      await page.mouse.move(centerX - 120, centerY - 45, { steps: 18 }).catch(() => {});
+      await sleep(250 + Math.random() * 350);
+      await page.mouse.move(centerX, centerY, { steps: 14 }).catch(() => {});
+      await sleep(120 + Math.random() * 180);
       await page.mouse.down();
-      await sleep(60 + Math.random() * 90);
+      await sleep(80 + Math.random() * 120);
       await page.mouse.up();
     } else {
       await checkbox.click({ timeout: 15000, delay: 80 });
@@ -234,8 +299,9 @@ async function solveBestcap(page, { logger, timeoutSeconds = 60, detectTimeoutMs
   let firstCheck = true;
 
   while (Date.now() < deadline) {
-    if (await getBestcapToken(page)) {
-      logger?.info('Bestcap 验证通过。');
+    const token = await getBestcapToken(page);
+    if (token) {
+      logger?.info(`Bestcap token 已生成：${JSON.stringify(summarizeToken(token))}`);
       return { encountered: true, solved: true };
     }
 
@@ -246,8 +312,9 @@ async function solveBestcap(page, { logger, timeoutSeconds = 60, detectTimeoutMs
       .catch(() => false);
     if (verified) {
       await sleep(500);
-      if (await getBestcapToken(page)) {
-        logger?.info('Bestcap 验证通过。');
+      const verifiedToken = await getBestcapToken(page);
+      if (verifiedToken) {
+        logger?.info(`Bestcap token 已生成：${JSON.stringify(summarizeToken(verifiedToken))}`);
         return { encountered: true, solved: true };
       }
     }
@@ -285,13 +352,39 @@ export async function renewViaUi({
   headless = true,
   timeoutSeconds = 60,
   channel = '',
+  headful = false,
   logger,
 }) {
-  const browser = await launchBrowser({ headless, channel });
-  let context;
+  let xvfb = null;
+  let browser = null;
+  let context = null;
+  let effectiveHeadless = headless;
+
   try {
+    if (headful) {
+      xvfb = await ensureXvfb();
+      if (xvfb || process.platform !== 'linux') {
+        effectiveHeadless = false;
+        logger?.info('使用有头 Chrome（Xvfb 虚拟显示）以降低风控概率。');
+      }
+    }
+
+    browser = await launchBrowser({ headless: effectiveHeadless, channel });
     context = await openContext(browser, { baseUrl, statePath, cookie });
     const page = await context.newPage();
+
+    page.on('response', async (response) => {
+      if (!/\/api\/servers\/[^/]+\/renew$/.test(response.url())) {
+        return;
+      }
+      if (response.ok()) {
+        logger?.info('续期接口返回成功。');
+        return;
+      }
+      const body = await response.text().catch(() => '');
+      logger?.warn(`续期接口返回 HTTP ${response.status()}：${body.slice(0, 500)}`);
+    });
+
     await page.goto('/#/servers', { waitUntil: 'domcontentloaded', timeout: 60000 });
     await page
       .locator('button', { hasText: /Continue with GitHub|Renew/ })
@@ -344,7 +437,9 @@ export async function renewViaUi({
         const popup = await popupPromise;
 
         if (popup) {
-          logger?.info('站点打开了一个赞助页面，正在关闭...');
+          const adViewMs = 4000 + Math.random() * 3000;
+          logger?.info(`站点打开了一个赞助页面，停留 ${Math.round(adViewMs)}ms 后关闭（模拟真人）...`);
+          await sleep(adViewMs);
           await popup.close().catch(() => {});
           await page.bringToFront();
         }
@@ -414,6 +509,7 @@ export async function renewViaUi({
     return summary;
   } finally {
     await context?.close().catch(() => {});
-    await browser.close().catch(() => {});
+    await browser?.close().catch(() => {});
+    stopXvfb(xvfb);
   }
 }

@@ -22,7 +22,7 @@ vyce.cloud 在 2026 年 10 月给续期加了 **Bestcap 人机验证**：`POST /
 
 1. 先用 API 正常尝试续期（如果后端仍放行，继续全自动）；
 2. 如果被 CAPTCHA 拦下，自动启动浏览器（GitHub Actions 用系统自带 Chrome）打开续期弹窗；
-3. 模拟真实鼠标移动和点击，勾选 Bestcap 验证框；
+3. 模拟真实鼠标移动和点击，勾选 Bestcap 验证框（GitHub Actions 中用 Xvfb 启动有头 Chrome，并模拟广告停留）；
 4. 验证通过后，站点会自动完成续期，脚本等待成功提示并发送 Telegram 通知；
 5. 如果点击后仍未通过（例如升级成图片题、被风控），才发送 **“需要手动验证”** 消息，附带 **“去完成验证并续期”** 按钮。
 
@@ -169,6 +169,7 @@ npm run renew:ui -- --headed   # 显示浏览器窗口（默认无头）
 | `VYCE_DRY_RUN` | `false` | 试运行，只打印计划 |
 | `VYCE_HEADLESS` | `true` | 浏览器模式是否无头；首次 `login` 始终需要可见窗口 |
 | `VYCE_CAPTCHA_BROWSER` | `true` | API 被 CAPTCHA 拦下时，是否自动用浏览器点击验证框 |
+| `VYCE_CAPTCHA_HEADFUL` | CI 中为 `true` | 用 Xvfb 启动有头 Chrome（更接近真人）；本地默认无头 |
 | `VYCE_CAPTCHA_TIMEOUT_SECONDS` | `60` | 等待验证框通过的秒数 |
 | `VYCE_BROWSER_CHANNEL` | 空 | 浏览器通道，如 `chrome`；留空优先自带 Chromium，失败回退系统 Chrome |
 | `VYCE_LOGIN_TIMEOUT_SECONDS` | `600` | 等待 GitHub 登录的超时时间 |

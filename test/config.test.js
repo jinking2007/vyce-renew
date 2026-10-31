@@ -22,6 +22,7 @@ test('loadConfig 提供合理默认值', () => {
   assert.equal(config.telegramNotifyAlways, false);
   assert.equal(config.cooldownGraceMinutes, 5);
   assert.equal(config.captchaBrowser, true);
+  assert.equal(config.captchaHeadful, false);
   assert.equal(config.captchaTimeoutSeconds, 60);
   assert.equal(config.browserChannel, '');
 });
@@ -41,6 +42,7 @@ test('loadConfig 读取环境变量并去掉末尾斜杠', () => {
     TELEGRAM_NOTIFY: 'always',
     VYCE_COOLDOWN_GRACE_MINUTES: '2',
     VYCE_CAPTCHA_BROWSER: 'false',
+    VYCE_CAPTCHA_HEADFUL: 'true',
     VYCE_CAPTCHA_TIMEOUT_SECONDS: '120',
     VYCE_BROWSER_CHANNEL: 'chrome',
   });
@@ -58,6 +60,7 @@ test('loadConfig 读取环境变量并去掉末尾斜杠', () => {
   assert.equal(config.telegramNotifyAlways, true);
   assert.equal(config.cooldownGraceMinutes, 2);
   assert.equal(config.captchaBrowser, false);
+  assert.equal(config.captchaHeadful, true);
   assert.equal(config.captchaTimeoutSeconds, 120);
   assert.equal(config.browserChannel, 'chrome');
 });

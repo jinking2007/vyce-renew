@@ -72,6 +72,7 @@ export function loadConfig(env = process.env) {
     telegramNotify,
     telegramNotifyAlways,
     captchaBrowser: readBoolean(env, 'VYCE_CAPTCHA_BROWSER', true),
+    captchaHeadful: readBoolean(env, 'VYCE_CAPTCHA_HEADFUL', env.CI === 'true' || env.GITHUB_ACTIONS === 'true'),
     captchaTimeoutSeconds: readNumber(env, 'VYCE_CAPTCHA_TIMEOUT_SECONDS', 60, { min: 10, max: 300 }),
     browserChannel: readString(env, 'VYCE_BROWSER_CHANNEL'),
   };

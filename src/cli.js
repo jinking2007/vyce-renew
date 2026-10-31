@@ -79,6 +79,7 @@ async function tryBrowserCaptcha({ config, logger, summary, headless }) {
       headless,
       timeoutSeconds: config.captchaTimeoutSeconds,
       channel: config.browserChannel,
+      headful: config.captchaHeadful,
       logger,
     });
     summary.browserFallback = uiSummary;
@@ -109,6 +110,7 @@ async function commandRenew(config, logger, values) {
         headless,
         timeoutSeconds: config.captchaTimeoutSeconds,
         channel: config.browserChannel,
+        headful: config.captchaHeadful,
         logger,
       });
     } catch (error) {
