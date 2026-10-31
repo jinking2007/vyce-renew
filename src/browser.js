@@ -147,6 +147,14 @@ async function openContext(browser, { baseUrl, statePath, cookie }) {
     await context.addCookies(cookies);
   }
 
+  await context.addInitScript(() => {
+    try {
+      Object.defineProperty(navigator, 'webdriver', { get: () => false });
+    } catch {
+      // ignore
+    }
+  });
+
   return context;
 }
 async function saveStorageState(context, statePath, logger) {
@@ -258,16 +266,27 @@ function summarizeToken(token) {
   if (!token) {
     return { length: 0 };
   }
+  const summary = { length: token.length, segments: token.split('.').length, prefix: token.slice(0, 8) };
   const parts = token.split('.');
   if (parts.length === 3) {
     try {
       const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
-      return { length: token.length, jwtKeys: Object.keys(payload) };
+      summary.jwtKeys = Object.keys(payload);
+      return summary;
     } catch {
       // ignore
     }
   }
-  return { length: token.length };
+  try {
+    const decoded = Buffer.from(token, 'base64url').toString('utf8');
+    if (/^[\x20-\x7e\s]+$/.test(decoded)) {
+      const payload = JSON.parse(decoded);
+      summary.base64JsonKeys = Object.keys(payload);
+    }
+  } catch {
+    // ignore
+  }
+  return summary;
 }
 
 /**
@@ -410,6 +429,18 @@ export async function renewViaUi({
     });
 
     await page.goto('/#/servers', { waitUntil: 'domcontentloaded', timeout: 60000 });
+    const fingerprint = await page
+      .evaluate(() => ({
+        webdriver: navigator.webdriver,
+        ua: navigator.userAgent,
+        platform: navigator.platform,
+        languages: navigator.languages,
+        hardwareConcurrency: navigator.hardwareConcurrency,
+      }))
+      .catch(() => null);
+    if (fingerprint) {
+      logger?.info(`浏览器环境：${JSON.stringify(fingerprint)}`);
+    }
     await page
       .locator('button', { hasText: /Continue with GitHub|Renew/ })
       .first()
