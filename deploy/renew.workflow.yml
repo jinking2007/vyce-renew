@@ -42,6 +42,7 @@ jobs:
         run: npm run renew
         env:
           VYCE_COOKIE: ${{ secrets.VYCE_COOKIE }}
+          PROXY_URL: ${{ secrets.PROXY_URL }}
           VYCE_PROXY_SERVER: ${{ secrets.VYCE_PROXY_SERVER }}
           VYCE_PROXY_USERNAME: ${{ secrets.VYCE_PROXY_USERNAME }}
           VYCE_PROXY_PASSWORD: ${{ secrets.VYCE_PROXY_PASSWORD }}

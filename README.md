@@ -7,6 +7,7 @@
 - 支持 GitHub Actions（免服务器）、Docker、systemd、cron、常驻进程
 - 支持 Telegram 通知：续期成功、部分失败、登录失效时推送到手机；CAPTCHA 自动点击失败时可推送“去续期”按钮
 - 站点新增 Bestcap 验证时，自动用真实浏览器点击验证框后完成续期
+- 内置 sing-box，可把 `vless://` 链接直接变成固定出口代理
 - 支持 HTTP(S)/SOCKS 代理，可让 API 和浏览器统一走固定出口 IP
 - 内置重试、冷却判断、续期结果校验和清晰的中文日志
 - 单元测试 + 本地 mock 集成测试
@@ -239,16 +240,46 @@ npm run notify-test
 
 > 如果运行成功但没收到消息，先看日志里的“本次结果”：如果显示 `续期 0 台，跳过 1 台`，说明服务器还在冷却期，默认不发通知，这是正常的。想每天都收到一条确认，把 `TELEGRAM_NOTIFY` 设为 `always`。
 
-## 固定 IP / 代理
+## 固定 IP / VLESS 代理
 
-如果你的节点提供固定出口 IP，把它加进来**通常有助于通过 Bestcap 风控**，因为验证 token 与续期请求会来自同一个稳定 IP。注意：
+如果 Bestcap 的风控和 IP 有关，固定出口节点通常有帮助。**住宅 / 静态 ISP 节点成功率最高**，普通机房节点可能仍被标记；出口必须固定或粘性，不能在验证过程中切换 IP。
 
-- **住宅 / 静态 ISP 代理**成功率最高；普通机房代理（VPS）可能仍然被判定为风险 IP；
-- 必须是**固定或粘性出口**，不要在验证过程中切换 IP；
-- 推荐使用 HTTP(S) 代理端口（Clash / V2Ray 的 mixed 端口即可）；SOCKS5 只有浏览器支持，API 会直连并给出警告；
-- 浏览器（验证框 + 站点续期请求）和 Node API 都会走同一个代理。
+### 1. 直接填 VLESS（推荐）
 
-配置方式：
+在 `.env` 或 GitHub Secret 中设置：
+
+```dotenv
+PROXY_URL=vless://uuid@host:443?security=reality&sni=...&pbk=...&sid=...&fp=chrome&type=tcp&flow=xtls-rprx-vision
+```
+
+程序会：
+
+1. 解析 VLESS 链接（支持 `tcp` / `ws` / `grpc` / `http`，`tls` / `reality`，以及 `sni` / `fp` / `alpn` / `flow` 等常见参数）；
+2. 自动下载 sing-box（默认 1.14.4，约 32MB，首次运行会慢一点）；
+3. 生成临时配置并启动本地 mixed 代理（只监听 `127.0.0.1`）；
+4. 让 Node API 和 Chrome 浏览器都走这个本地代理，最终从 VLESS 节点出口；
+5. 启动后立即删除含 UUID 的临时配置，日志只显示节点地址和本地端口。
+
+**不需要**在公网服务器上暴露 mixed inbound，GitHub Actions 里直接就能用：
+
+```text
+GitHub Runner → 本地 sing-box → VLESS 节点 → vyce.cloud
+```
+
+GitHub Actions 需要：
+
+- Secret `PROXY_URL` = 完整 `vless://` 链接；
+- 工作流 `Renew servers` 的 `env:` 中加：
+
+```yaml
+          PROXY_URL: ${{ secrets.PROXY_URL }}
+```
+
+（`deploy/renew.workflow.yml` 模板已包含；你现有的工作流需要手动补这一行。）
+
+下载失败时，可以手动把 sing-box 二进制放到 `.cache/sing-box`，或用 `VYCE_SING_BOX_PATH` 指定路径；版本可用 `VYCE_SING_BOX_VERSION` 固定。
+
+### 2. 使用现成的 HTTP/SOCKS 代理
 
 ```dotenv
 VYCE_PROXY_SERVER=http://127.0.0.1:7890
@@ -256,77 +287,28 @@ VYCE_PROXY_USERNAME=可选
 VYCE_PROXY_PASSWORD=可选
 ```
 
-本地先用 `npm run status` 验证代理是否生效（日志会显示“API 使用代理”）。
+HTTP(S) 代理会同时用于 API 和浏览器；SOCKS5 只有浏览器支持，API 会直连并给出警告。对应 Secrets：`VYCE_PROXY_SERVER`、`VYCE_PROXY_USERNAME`、`VYCE_PROXY_PASSWORD`。
 
-GitHub Actions 需要在仓库 Secret 中添加：
+### 3. 手动运行 sing-box（可选）
 
-- `VYCE_PROXY_SERVER`
-- `VYCE_PROXY_USERNAME`（可选）
-- `VYCE_PROXY_PASSWORD`（可选）
-
-并确保工作流的 `env:` 中包含这三项（`deploy/renew.workflow.yml` 模板已包含）。如果你用的是之前版本的工作流文件，请把这三行补到 `Renew servers` 步骤的 `env:` 下：
-
-```yaml
-          VYCE_PROXY_SERVER: ${{ secrets.VYCE_PROXY_SERVER }}
-          VYCE_PROXY_USERNAME: ${{ secrets.VYCE_PROXY_USERNAME }}
-          VYCE_PROXY_PASSWORD: ${{ secrets.VYCE_PROXY_PASSWORD }}
-```
-
-> 代理密码等同于账号凭据，请只放在 Secret / `.env` 中，不要提交到 Git。
-> 如果加了住宅代理仍然失败，说明 Bestcap 还会检测自动化环境或账号行为，代理本身无法解决。
-
-### sing-box + VLESS 怎么接
-
-`vless://` 是节点链接，不是 HTTP 代理，程序不能直接使用。需要让 sing-box 提供一个 **mixed inbound**（同时支持 HTTP 和 SOCKS），然后把地址填给程序。
-
-在 sing-box 配置里加入：
+如果你更想自己管理 sing-box，也可以开一个 mixed inbound，然后用 `VYCE_PROXY_SERVER` 指向它：
 
 ```json
 {
   "inbounds": [
     {
       "type": "mixed",
-      "tag": "mixed-in",
       "listen": "127.0.0.1",
       "listen_port": 7890,
-      "users": [
-        { "username": "vyce", "password": "换成强密码" }
-      ]
+      "users": [{ "username": "vyce", "password": "强密码" }]
     }
   ]
 }
 ```
 
-保留你原来的 VLESS outbound 和 route（确保最终出口是 VLESS 节点），然后：
-
-```dotenv
-VYCE_PROXY_SERVER=http://127.0.0.1:7890
-VYCE_PROXY_USERNAME=vyce
-VYCE_PROXY_PASSWORD=换成强密码
-```
-
-推荐 HTTP 端口（`mixed` 同时支持），因为 API 和浏览器都会走它；纯 SOCKS 端口 API 会直连。
-
-**两种部署方式：**
-
-1. **机器人跑在和 sing-box 同一台机器上（推荐）**
-   - 最安全、延迟最低；
-   - 直接 `npm run daemon` 或 cron，不需要把代理暴露到公网；
-   - 出口 IP 就是 VLESS 节点的 IP。
-
-2. **继续用 GitHub Actions**
-   - sing-box 必须运行在**有公网 IP 的服务器**上，`listen` 改成 `0.0.0.0`；
-   - 把 `http://公网IP:7890` 和用户名密码存到 Secret；
-   - **务必**加防火墙/TLS/强密码，不要把无认证代理暴露公网（会被扫描滥用）；
-   - 出口 IP 是 VLESS 节点 IP，住宅/固定 ISP 节点成功率更高，机房节点可能仍被 Bestcap 风控。
-
-GitHub Actions 的连接路径是：
-
-```text
-GitHub Runner → 公网 sing-box mixed inbound → VLESS 节点 → vyce.cloud
-```
-
-所以真正对 vyce.cloud 展示的 IP 是 VLESS 节点的出口 IP，固定且不轮换才有意义。
+> VLESS/VMess/Trojan 的 `vless://`、`vmess://` 等链接不能直接填到 `VYCE_PROXY_SERVER`，程序会提示改用 `PROXY_URL`。
+> 代理凭据等同账号密码，只放在 Secret / `.env` 中，不要提交到 Git。
+> 如果加了住宅节点仍然失败，说明 Bestcap 还会检测自动化环境或账号行为，单靠代理无法解决。
 
 ## 浏览器点击模式
 

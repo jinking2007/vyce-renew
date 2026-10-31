@@ -8,6 +8,7 @@ import { VyceAuthError, VyceClient, buildProxyUrl, resolveCookieHeader } from '.
 import { runRenewal } from './renew.js';
 import { loginWithBrowser, renewViaUi } from './browser.js';
 import { notifyApiResult, notifyFailure, notifyTest, notifyUiResult } from './notify.js';
+import { resolveProxyRuntime } from './proxy-runtime.js';
 
 const HELP = `
 vyce.cloud 自动续期工具
@@ -43,6 +44,9 @@ function describeUser(user) {
 }
 
 function proxyFromConfig(config) {
+  if (Object.prototype.hasOwnProperty.call(config, 'resolvedProxy')) {
+    return config.resolvedProxy;
+  }
   if (!config.proxyServer) {
     return null;
   }
@@ -371,28 +375,42 @@ async function main() {
   const config = loadConfig();
   const logger = createLogger({ level: values.json ? 'error' : 'info' });
 
-  switch (command) {
-    case 'login':
-      await commandLogin(config, logger, values);
-      break;
-    case 'renew':
-      await commandRenew(config, logger, values);
-      break;
-    case 'status':
-      await commandStatus(config, logger, values);
-      break;
-    case 'daemon':
-      await commandDaemon(config, logger, values);
-      break;
-    case 'export-cookie':
-      await commandExportCookie(config, logger);
-      break;
-    case 'notify-test':
-      await commandNotifyTest(config, logger, values);
-      break;
-    default:
-      process.stderr.write(`未知命令：${command}\n${HELP}`);
-      process.exitCode = 2;
+  let proxyRuntime;
+  try {
+    proxyRuntime = await resolveProxyRuntime(config, logger);
+  } catch (error) {
+    logger.error(`代理初始化失败：${describeError(error)}`);
+    process.exitCode = 1;
+    return;
+  }
+  config.resolvedProxy = proxyRuntime.proxy;
+
+  try {
+    switch (command) {
+      case 'login':
+        await commandLogin(config, logger, values);
+        break;
+      case 'renew':
+        await commandRenew(config, logger, values);
+        break;
+      case 'status':
+        await commandStatus(config, logger, values);
+        break;
+      case 'daemon':
+        await commandDaemon(config, logger, values);
+        break;
+      case 'export-cookie':
+        await commandExportCookie(config, logger);
+        break;
+      case 'notify-test':
+        await commandNotifyTest(config, logger, values);
+        break;
+      default:
+        process.stderr.write(`未知命令：${command}\n${HELP}`);
+        process.exitCode = 2;
+    }
+  } finally {
+    await proxyRuntime.stop();
   }
 }
 

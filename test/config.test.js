@@ -28,6 +28,9 @@ test('loadConfig 提供合理默认值', () => {
   assert.equal(config.proxyServer, '');
   assert.equal(config.proxyUsername, '');
   assert.equal(config.proxyPassword, '');
+  assert.equal(config.proxyUrl, '');
+  assert.equal(config.singBoxVersion, '1.14.4');
+  assert.equal(path.basename(config.singBoxPath), 'sing-box');
 });
 
 test('loadConfig 读取环境变量并去掉末尾斜杠', () => {
@@ -51,6 +54,8 @@ test('loadConfig 读取环境变量并去掉末尾斜杠', () => {
     VYCE_PROXY_SERVER: 'http://127.0.0.1:7890',
     VYCE_PROXY_USERNAME: 'user',
     VYCE_PROXY_PASSWORD: 'pass',
+    PROXY_URL: 'vless://uuid@example.com:443?security=tls',
+    VYCE_SING_BOX_VERSION: '1.15.0',
   });
   assert.equal(config.baseUrl, 'https://example.test');
   assert.equal(config.cookie, 'a=1');
@@ -72,6 +77,8 @@ test('loadConfig 读取环境变量并去掉末尾斜杠', () => {
   assert.equal(config.proxyServer, 'http://127.0.0.1:7890');
   assert.equal(config.proxyUsername, 'user');
   assert.equal(config.proxyPassword, 'pass');
+  assert.equal(config.proxyUrl, 'vless://uuid@example.com:443?security=tls');
+  assert.equal(config.singBoxVersion, '1.15.0');
 });
 
 test('TELEGRAM_NOTIFY=false 关闭通知，always 作为每日心跳', () => {
