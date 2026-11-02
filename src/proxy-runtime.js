@@ -18,6 +18,44 @@ const COUNTRY_PROFILE = {
   US: { timezoneId: 'America/New_York', locale: 'en-US' },
 };
 
+/**
+ * 根据国家/城市时区生成浏览器环境配置。
+ * timezoneId 来自 IP 地理查询时会优先于国家默认值。
+ */
+export function buildBrowserProfile({ country = '', timezoneId = '' } = {}) {
+  const base = COUNTRY_PROFILE[country] || null;
+  if (!timezoneId && !base) {
+    return null;
+  }
+  return {
+    timezoneId: timezoneId || base.timezoneId,
+    locale: base?.locale || 'en-US',
+  };
+}
+
+async function lookupTimezone(ip, logger) {
+  if (!ip) {
+    return null;
+  }
+  try {
+    const response = await undiciFetch(`https://ipinfo.io/${encodeURIComponent(ip)}/json`, {
+      signal: AbortSignal.timeout(6000),
+      headers: { accept: 'application/json' },
+    });
+    if (!response.ok) {
+      return null;
+    }
+    const data = await response.json();
+    if (!data?.timezone) {
+      return null;
+    }
+    return { timezoneId: data.timezone, country: data.country || '' };
+  } catch (error) {
+    logger?.warn(`IP 时区查询失败，回退到国家默认值：${error?.message || error}`);
+    return null;
+  }
+}
+
 async function probeExitIp(proxy, logger) {
   if (!proxy?.server) {
     return null;
@@ -59,9 +97,15 @@ async function probeExitIp(proxy, logger) {
     }
   }
 
-  const profile = COUNTRY_PROFILE[country] || null;
+  const geo = await lookupTimezone(ips[0], logger);
+  const profile = buildBrowserProfile({
+    country: geo?.country || country,
+    timezoneId: geo?.timezoneId || '',
+  });
   if (profile) {
-    logger?.info(`浏览器时区/语言将对齐出口：${profile.timezoneId} / ${profile.locale}`);
+    logger?.info(
+      `浏览器时区/语言将对齐出口：${profile.timezoneId} / ${profile.locale}（来源：${geo?.timezoneId ? 'IP 城市时区' : '国家默认值'}）`,
+    );
   }
   return profile;
 }
