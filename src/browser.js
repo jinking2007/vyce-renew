@@ -58,6 +58,11 @@ function stopXvfb(child) {
 }
 
 let cachedDriver = null;
+let activeDriverName = '';
+
+export function getBrowserDriverName() {
+  return activeDriverName || 'unknown';
+}
 
 async function loadPlaywright() {
   if (cachedDriver) {
@@ -68,6 +73,7 @@ async function loadPlaywright() {
   if (stealthEnabled) {
     try {
       cachedDriver = await import('patchright');
+      activeDriverName = 'patchright';
       return cachedDriver;
     } catch {
       // patchright 不可用时回退到官方 playwright
@@ -76,6 +82,7 @@ async function loadPlaywright() {
 
   try {
     cachedDriver = await import('playwright');
+    activeDriverName = 'playwright';
     return cachedDriver;
   } catch (error) {
     throw new Error(
@@ -475,6 +482,7 @@ export async function renewViaUi({
     }
 
     browser = await launchBrowser({ headless: effectiveHeadless, channel, proxy });
+    logger?.info(`浏览器驱动：${getBrowserDriverName()}，headless=${effectiveHeadless}`);
     context = await openContext(browser, { baseUrl, statePath, cookie, profile });
     const page = await context.newPage();
 
