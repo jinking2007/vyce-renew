@@ -171,6 +171,7 @@ npm run renew:ui -- --headed   # 显示浏览器窗口（默认无头）
 | `VYCE_DRY_RUN` | `false` | 试运行，只打印计划 |
 | `VYCE_HEADLESS` | `true` | 浏览器模式是否无头；首次 `login` 始终需要可见窗口 |
 | `VYCE_CAPTCHA_BROWSER` | `true` | API 被 CAPTCHA 拦下时，是否自动用浏览器点击验证框 |
+| `VYCE_STEALTH` | `true` | 使用 patchright 反检测驱动；设为 `false` 回退官方 Playwright |
 | `VYCE_CAPTCHA_HEADFUL` | CI 中为 `true` | 用 Xvfb 启动有头 Chrome（更接近真人）；本地默认无头 |
 | `VYCE_CAPTCHA_TIMEOUT_SECONDS` | `60` | 等待验证框通过的秒数 |
 | `VYCE_BROWSER_CHANNEL` | 空 | 浏览器通道，如 `chrome`；留空优先自带 Chromium，失败回退系统 Chrome |
@@ -327,6 +328,8 @@ npm run renew:ui -- --headed      # 观察整个点击过程
 在无头 Linux 服务器上如提示缺少系统库，可执行 `npx playwright install --with-deps chromium`（需要 root）。
 
 > 站点新增的 Bestcap CAPTCHA 会在浏览器模式中自动模拟鼠标点击；如果验证升级为图片题或被风控，会停止并提示手动完成。
+
+浏览器默认使用 **patchright**（Playwright 的反检测分支）并补齐 `navigator.webdriver`、WebGL/Chrome 指纹；如果 patchright 与当前系统不兼容，可设置 `VYCE_STEALTH=false` 回退官方 Playwright。反检测不能保证一定通过，Bestcap 仍可能在服务端判定风险。
 
 ## 文件结构
 

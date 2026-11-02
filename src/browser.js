@@ -57,18 +57,47 @@ function stopXvfb(child) {
   }
 }
 
+let cachedDriver = null;
+
 async function loadPlaywright() {
+  if (cachedDriver) {
+    return cachedDriver;
+  }
+
+  const stealthEnabled = String(process.env.VYCE_STEALTH || 'true').toLowerCase() !== 'false';
+  if (stealthEnabled) {
+    try {
+      cachedDriver = await import('patchright');
+      return cachedDriver;
+    } catch {
+      // patchright 不可用时回退到官方 playwright
+    }
+  }
+
   try {
-    return await import('playwright');
+    cachedDriver = await import('playwright');
+    return cachedDriver;
   } catch (error) {
     throw new Error(
-      `无法加载 playwright，请先在项目目录运行 "npm install"（${error?.message || error}）。`,
+      `无法加载 playwright/patchright，请先在项目目录运行 "npm install"（${error?.message || error}）。`,
     );
   }
 }
 
 async function launchBrowser({ headless = true, channel = '', proxy = null } = {}) {
-  const { chromium } = await loadPlaywright();
+  const primary = await loadPlaywright();
+  const drivers = [primary];
+  if (String(process.env.VYCE_STEALTH || 'true').toLowerCase() !== 'false') {
+    try {
+      const official = await import('playwright');
+      if (official !== primary) {
+        drivers.push(official);
+      }
+    } catch {
+      // ignore
+    }
+  }
+
   const args = [
     '--no-sandbox',
     '--disable-dev-shm-usage',
@@ -83,20 +112,22 @@ async function launchBrowser({ headless = true, channel = '', proxy = null } = {
           ...(proxy.password ? { password: proxy.password } : {}),
         }
       : null;
-  // 优先用 Playwright 自带 Chromium；没安装时回退到系统 Chrome（GitHub Actions 自带）。
+  // 优先用自带 Chromium；没安装时回退到系统 Chrome（GitHub Actions 自带）。
   const attempts = channel ? [{ channel }] : [{}, { channel: 'chrome' }];
   const errors = [];
 
-  for (const attempt of attempts) {
-    try {
-      return await chromium.launch({
-        headless,
-        args,
-        ...(proxyOption ? { proxy: proxyOption } : {}),
-        ...attempt,
-      });
-    } catch (error) {
-      errors.push(error);
+  for (const driver of drivers) {
+    for (const attempt of attempts) {
+      try {
+        return await driver.chromium.launch({
+          headless,
+          args,
+          ...(proxyOption ? { proxy: proxyOption } : {}),
+          ...attempt,
+        });
+      } catch (error) {
+        errors.push(error);
+      }
     }
   }
 
@@ -153,6 +184,35 @@ async function openContext(browser, { baseUrl, statePath, cookie, profile = null
       Object.defineProperty(navigator, 'webdriver', { get: () => false });
     } catch {
       // ignore
+    }
+
+    try {
+      const spoof = (proto) => {
+        if (!proto) {
+          return;
+        }
+        const original = proto.getParameter;
+        proto.getParameter = function getParameter(parameter) {
+          if (parameter === 37445) {
+            return 'Google Inc. (Intel)';
+          }
+          if (parameter === 37446) {
+            return 'ANGLE (Intel, Mesa Intel(R) UHD Graphics 620 (KBL GT2), OpenGL 4.6)';
+          }
+          return original.call(this, parameter);
+        };
+      };
+      spoof(window.WebGLRenderingContext && WebGLRenderingContext.prototype);
+      spoof(window.WebGL2RenderingContext && WebGL2RenderingContext.prototype);
+    } catch {
+      // ignore
+    }
+
+    if (!window.chrome) {
+      window.chrome = {};
+    }
+    if (!window.chrome.runtime) {
+      window.chrome.runtime = {};
     }
   });
 
@@ -432,14 +492,33 @@ export async function renewViaUi({
 
     await page.goto('/#/servers', { waitUntil: 'domcontentloaded', timeout: 60000 });
     const fingerprint = await page
-      .evaluate(() => ({
-        webdriver: navigator.webdriver,
-        ua: navigator.userAgent,
-        platform: navigator.platform,
-        languages: navigator.languages,
-        hardwareConcurrency: navigator.hardwareConcurrency,
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      }))
+      .evaluate(() => {
+        let webglVendor = '';
+        let webglRenderer = '';
+        try {
+          const canvas = document.createElement('canvas');
+          const gl = canvas.getContext('webgl');
+          const debug = gl && gl.getExtension('WEBGL_debug_renderer_info');
+          if (gl && debug) {
+            webglVendor = gl.getParameter(debug.UNMASKED_VENDOR_WEBGL);
+            webglRenderer = gl.getParameter(debug.UNMASKED_RENDERER_WEBGL);
+          }
+        } catch {
+          // ignore
+        }
+        return {
+          webdriver: navigator.webdriver,
+          ua: navigator.userAgent,
+          platform: navigator.platform,
+          languages: navigator.languages,
+          hardwareConcurrency: navigator.hardwareConcurrency,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          plugins: navigator.plugins.length,
+          chromeRuntime: Boolean(window.chrome && window.chrome.runtime),
+          webglVendor,
+          webglRenderer,
+        };
+      })
       .catch(() => null);
     if (fingerprint) {
       logger?.info(`浏览器环境：${JSON.stringify(fingerprint)}`);
